@@ -12,16 +12,20 @@ use windows::core::PWSTR;
 #[cfg(windows)]
 use windows::Wdk::System::SystemInformation::{NtQuerySystemInformation, SystemProcessInformation};
 #[cfg(windows)]
-use windows::Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation, ProcessCommandLineInformation};
+use windows::Wdk::System::Threading::{
+    NtQueryInformationProcess, ProcessBasicInformation, ProcessCommandLineInformation,
+};
 #[cfg(windows)]
-use windows::Win32::Foundation::{CloseHandle, HANDLE, STATUS_INFO_LENGTH_MISMATCH, UNICODE_STRING};
-#[cfg(windows)]
-use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+use windows::Win32::Foundation::{
+    CloseHandle, HANDLE, STATUS_INFO_LENGTH_MISMATCH, UNICODE_STRING,
+};
 #[cfg(windows)]
 use windows::Win32::Security::{
     AdjustTokenPrivileges, LookupPrivilegeValueW, SE_DEBUG_NAME, SE_PRIVILEGE_ENABLED,
     TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES,
 };
+#[cfg(windows)]
+use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 #[cfg(windows)]
 use windows::Win32::System::ProcessStatus::{GetPerformanceInfo, PERFORMANCE_INFORMATION};
 #[cfg(windows)]
@@ -292,10 +296,21 @@ impl Sampler {
                 }
                 None => (0.0, 0.0),
             };
-            self.cpu_prev.insert(key, CpuSample { total_100ns: total, io_bytes: r.io_bytes, at: now });
+            self.cpu_prev.insert(
+                key,
+                CpuSample {
+                    total_100ns: total,
+                    io_bytes: r.io_bytes,
+                    at: now,
+                },
+            );
 
             let name = if r.name.is_empty() {
-                if r.pid == 4 { "System".into() } else { format!("[pid {}]", r.pid) }
+                if r.pid == 4 {
+                    "System".into()
+                } else {
+                    format!("[pid {}]", r.pid)
+                }
             } else {
                 r.name.clone()
             };
@@ -385,7 +400,8 @@ impl Sampler {
                         create_time: e.create_time,
                         user_time: e.user_time,
                         kernel_time: e.kernel_time,
-                        io_bytes: (e.read_transfer_count.max(0) + e.write_transfer_count.max(0)) as u64,
+                        io_bytes: (e.read_transfer_count.max(0) + e.write_transfer_count.max(0))
+                            as u64,
                     });
                 }
                 if e.next_entry_offset == 0 {
@@ -429,12 +445,20 @@ fn query_static(pid: u32) -> StaticInfo {
         // Caminho completo do executável
         let mut buf = vec![0u16; 1024];
         let mut size = buf.len() as u32;
-        if QueryFullProcessImageNameW(h.0, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut size).is_ok() {
+        if QueryFullProcessImageNameW(h.0, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut size)
+            .is_ok()
+        {
             st.exe_path = String::from_utf16_lossy(&buf[..size as usize]);
         }
         // Linha de comando (ProcessCommandLineInformation: não precisa de VM_READ)
         let mut ret: u32 = 0;
-        let status = NtQueryInformationProcess(h.0, ProcessCommandLineInformation, std::ptr::null_mut(), 0, &mut ret);
+        let status = NtQueryInformationProcess(
+            h.0,
+            ProcessCommandLineInformation,
+            std::ptr::null_mut(),
+            0,
+            &mut ret,
+        );
         if status == STATUS_INFO_LENGTH_MISMATCH && ret > 0 {
             let mut cbuf = vec![0u8; ret as usize + 16];
             let status = NtQueryInformationProcess(
@@ -469,7 +493,11 @@ fn read_launcher(pid: u32) -> Launcher {
     const RUPP_ENVIRONMENT_SIZE: usize = 0x3F0;
     const MAX_ENV: usize = 2 * 1024 * 1024;
     unsafe {
-        let h = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, false, pid) {
+        let h = match OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+            false,
+            pid,
+        ) {
             Ok(h) => OwnedHandle(h),
             Err(_) => return Launcher::default(),
         };
@@ -493,14 +521,25 @@ fn read_launcher(pid: u32) -> Launcher {
         let read_usize = |addr: usize| -> Option<usize> {
             let mut b = [0u8; 8];
             let mut n: usize = 0;
-            ReadProcessMemory(h.0, addr as *const c_void, b.as_mut_ptr() as *mut c_void, 8, Some(&mut n)).ok()?;
+            ReadProcessMemory(
+                h.0,
+                addr as *const c_void,
+                b.as_mut_ptr() as *mut c_void,
+                8,
+                Some(&mut n),
+            )
+            .ok()?;
             (n == 8).then(|| usize::from_le_bytes(b))
         };
-        let Some(params) = read_usize(peb + PEB_PROCESS_PARAMETERS) else { return Launcher::default() };
+        let Some(params) = read_usize(peb + PEB_PROCESS_PARAMETERS) else {
+            return Launcher::default();
+        };
         if params == 0 {
             return Launcher::default();
         }
-        let Some(env) = read_usize(params + RUPP_ENVIRONMENT) else { return Launcher::default() };
+        let Some(env) = read_usize(params + RUPP_ENVIRONMENT) else {
+            return Launcher::default();
+        };
         if env == 0 {
             return Launcher::default();
         }
@@ -510,10 +549,22 @@ fn read_launcher(pid: u32) -> Launcher {
         }
         let mut buf = vec![0u8; size];
         let mut n: usize = 0;
-        if ReadProcessMemory(h.0, env as *const c_void, buf.as_mut_ptr() as *mut c_void, size, Some(&mut n)).is_err() || n < 4 {
+        if ReadProcessMemory(
+            h.0,
+            env as *const c_void,
+            buf.as_mut_ptr() as *mut c_void,
+            size,
+            Some(&mut n),
+        )
+        .is_err()
+            || n < 4
+        {
             return Launcher::default();
         }
-        let words: Vec<u16> = buf[..n].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let words: Vec<u16> = buf[..n]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
         parse_launcher(&words)
     }
 }
@@ -539,7 +590,9 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
     let mut l = Launcher::default();
     let mut host_rank = 0u8; // prioridade: Maestri > VS Code/Cursor > Windows Terminal/outros
     for s in lines {
-        let Some((k, v)) = s.split_once('=') else { continue };
+        let Some((k, v)) = s.split_once('=') else {
+            continue;
+        };
         let ku = k.to_ascii_uppercase();
         let mut set_host = |name: &str, rank: u8, l: &mut Launcher| {
             if host_rank < rank {
@@ -548,7 +601,10 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
             }
         };
         match ku.as_str() {
-            "CLAUDECODE" | "CLAUDE_CODE_ENTRYPOINT" | "CLAUDE_CODE_SESSION_ID" | "CLAUDE_CODE_CHILD_SESSION" => {
+            "CLAUDECODE"
+            | "CLAUDE_CODE_ENTRYPOINT"
+            | "CLAUDE_CODE_SESSION_ID"
+            | "CLAUDE_CODE_CHILD_SESSION" => {
                 l.agent.get_or_insert_with(|| "Claude Code".into());
                 if ku == "CLAUDE_CODE_SESSION_ID" {
                     l.session = Some(v.chars().take(8).collect());
@@ -558,8 +614,12 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
                 l.agent.get_or_insert_with(|| "Claude Code".into());
                 l.agent_pid = v.trim().parse().ok();
             }
-            "CODEX_SANDBOX" | "CODEX_SANDBOX_NETWORK_DISABLED" | "CODEX_THREAD_ID" | "CODEX_SESSION_ID"
-            | "CODEX_MANAGED_BY_NPM" | "CODEX_CI" => {
+            "CODEX_SANDBOX"
+            | "CODEX_SANDBOX_NETWORK_DISABLED"
+            | "CODEX_THREAD_ID"
+            | "CODEX_SESSION_ID"
+            | "CODEX_MANAGED_BY_NPM"
+            | "CODEX_CI" => {
                 l.agent.get_or_insert_with(|| "Codex".into());
                 if ku == "CODEX_THREAD_ID" || ku == "CODEX_SESSION_ID" {
                     l.session = Some(v.chars().take(8).collect());
@@ -575,14 +635,29 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
             "HERMES_SESSION_ID" | "HERMES_AGENT" => {
                 l.agent.get_or_insert_with(|| "Hermes".into());
             }
-            "MAESTRI_TERMINAL_ID" | "MAESTRI_WORKSPACE_ID" | "MAESTRI_PIPE" => set_host("Maestri", 3, &mut l),
+            "MAESTRI_TERMINAL_ID" | "MAESTRI_WORKSPACE_ID" | "MAESTRI_PIPE" => {
+                set_host("Maestri", 3, &mut l)
+            }
             "CURSOR_TRACE_ID" => set_host("Cursor", 2, &mut l),
             "TERM_PROGRAM" => {
                 let vl = v.to_ascii_lowercase();
-                let name = if vl == "vscode" { Some("VS Code") } else if vl.contains("cursor") { Some("Cursor") }
-                    else if vl.contains("zed") { Some("Zed") } else if vl.contains("warp") { Some("Warp") }
-                    else if vl.contains("iterm") { Some("iTerm") } else if vl.contains("apple_terminal") { Some("Terminal") }
-                    else if vl.contains("wezterm") { Some("WezTerm") } else { None };
+                let name = if vl == "vscode" {
+                    Some("VS Code")
+                } else if vl.contains("cursor") {
+                    Some("Cursor")
+                } else if vl.contains("zed") {
+                    Some("Zed")
+                } else if vl.contains("warp") {
+                    Some("Warp")
+                } else if vl.contains("iterm") {
+                    Some("iTerm")
+                } else if vl.contains("apple_terminal") {
+                    Some("Terminal")
+                } else if vl.contains("wezterm") {
+                    Some("WezTerm")
+                } else {
+                    None
+                };
                 if let Some(nm) = name {
                     set_host(nm, 2, &mut l);
                 }
@@ -612,8 +687,8 @@ pub fn kill(pid: u32) -> Result<(), String> {
 fn fmt_err(e: &windows::core::Error) -> String {
     let code = e.code().0 as u32 & 0xFFFF;
     match code {
-        5 => "acesso negado (tente reabrir como admin)".to_string(),
-        87 => "parâmetro inválido (processo já encerrado?)".to_string(),
+        5 => "access denied (try reopening as administrator)".to_string(),
+        87 => "invalid parameter (process already exited?)".to_string(),
         _ => e.message().trim().to_string(),
     }
 }

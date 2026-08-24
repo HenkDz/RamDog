@@ -23,8 +23,8 @@ jobs:
         run: cargo build --release --target x86_64-apple-darwin
       - name: Pack
         run: |
-          tar -C target/aarch64-apple-darwin/release -czf RamDog-macos-aarch64.tar.gz ramdog
-          tar -C target/x86_64-apple-darwin/release -czf RamDog-macos-x86_64.tar.gz ramdog
+          tar -C target/aarch64-apple-darwin/release -czf RamDog-macos-aarch64.tar.gz ramdog ramdog-cli
+          tar -C target/x86_64-apple-darwin/release -czf RamDog-macos-x86_64.tar.gz ramdog ramdog-cli
       - uses: actions/upload-artifact@v4
         with:
           name: ramdog-macos

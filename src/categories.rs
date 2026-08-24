@@ -30,25 +30,25 @@ impl Category {
 
     pub fn label(self) -> &'static str {
         match self {
-            Category::Ai => "IA / Agentes",
+            Category::Ai => "AI / Agents",
             Category::Dev => "Dev",
-            Category::Browser => "Navegador",
-            Category::Games => "Jogos",
-            Category::Personal => "Pessoal",
-            Category::System => "Sistema",
-            Category::Other => "Outros",
+            Category::Browser => "Browser",
+            Category::Games => "Games",
+            Category::Personal => "Personal",
+            Category::System => "System",
+            Category::Other => "Other",
         }
     }
 
     pub fn short(self) -> &'static str {
         match self {
-            Category::Ai => "IA",
+            Category::Ai => "AI",
             Category::Dev => "Dev",
             Category::Browser => "Web",
-            Category::Games => "Jogos",
-            Category::Personal => "Pessoal",
-            Category::System => "Sistema",
-            Category::Other => "Outros",
+            Category::Games => "Games",
+            Category::Personal => "Personal",
+            Category::System => "System",
+            Category::Other => "Other",
         }
     }
 

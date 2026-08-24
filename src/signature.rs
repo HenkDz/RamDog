@@ -34,11 +34,11 @@ pub struct SigInfo {
 impl SigInfo {
     pub fn label(&self) -> String {
         match &self.trust {
-            Trust::Valid if self.signer.is_empty() => "assinatura válida".to_string(),
-            Trust::Valid => format!("assinado por {}", self.signer),
-            Trust::Unsigned => "sem assinatura digital".to_string(),
-            Trust::Invalid(why) => format!("assinatura inválida — {why}"),
-            Trust::Unknown(why) => format!("não verificado ({why})"),
+            Trust::Valid if self.signer.is_empty() => "valid signature".to_string(),
+            Trust::Valid => format!("signed by {}", self.signer),
+            Trust::Unsigned => "no digital signature".to_string(),
+            Trust::Invalid(why) => format!("invalid signature — {why}"),
+            Trust::Unknown(why) => format!("not verified ({why})"),
         }
     }
 
@@ -53,26 +53,36 @@ impl SigInfo {
 
     pub fn tip(&self) -> &'static str {
         match self.trust {
-            Trust::Valid => "O arquivo não foi alterado desde que o fabricante o assinou, e o certificado encadeia até uma raiz confiável desta máquina.",
-            Trust::Unsigned => "Sem assinatura não há como provar quem fez o arquivo nem se ele foi alterado. Normal em ferramentas pequenas e em builds próprios; suspeito num executável que diz ser do Windows.",
-            Trust::Invalid(_) => "A verificação reprovou: o arquivo pode ter sido adulterado, ou o certificado expirou ou não é confiável nesta máquina.",
-            Trust::Unknown(_) => "Não foi possível ler o arquivo para verificar.",
+            Trust::Valid => "The file has not changed since the publisher signed it, and the certificate chains to a trusted root on this machine.",
+            Trust::Unsigned => "Without a signature there is no proof of who made the file or whether it was changed. Normal for small tools and local builds; suspicious for an executable claiming to be Windows.",
+            Trust::Invalid(_) => "Verification failed: the file may have been tampered with, or the certificate is expired or untrusted on this machine.",
+            Trust::Unknown(_) => "The file could not be read for verification.",
         }
     }
 }
 
 #[cfg(not(windows))]
 pub fn verify(_path: &str) -> SigInfo {
-    SigInfo { trust: Trust::Unknown("só no Windows".into()), signer: String::new() }
+    SigInfo {
+        trust: Trust::Unknown("Windows only".into()),
+        signer: String::new(),
+    }
 }
 
 #[cfg(windows)]
 pub fn verify(path: &str) -> SigInfo {
     if path.is_empty() {
-        return SigInfo { trust: Trust::Unknown("sem acesso ao caminho".into()), signer: String::new() };
+        return SigInfo {
+            trust: Trust::Unknown("path unavailable".into()),
+            signer: String::new(),
+        };
     }
     let trust = check_trust(path);
-    let signer = if matches!(trust, Trust::Unsigned) { String::new() } else { signer_name(path) };
+    let signer = if matches!(trust, Trust::Unsigned) {
+        String::new()
+    } else {
+        signer_name(path)
+    };
     SigInfo { trust, signer }
 }
 
@@ -84,9 +94,9 @@ fn wide(s: &str) -> Vec<u16> {
 #[cfg(windows)]
 fn check_trust(path: &str) -> Trust {
     use windows::Win32::Security::WinTrust::{
-        WinVerifyTrust, WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_DATA, WINTRUST_DATA_0, WINTRUST_FILE_INFO,
-        WTD_CACHE_ONLY_URL_RETRIEVAL, WTD_CHOICE_FILE, WTD_REVOKE_NONE, WTD_STATEACTION_CLOSE,
-        WTD_STATEACTION_VERIFY, WTD_UI_NONE,
+        WinVerifyTrust, WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_DATA, WINTRUST_DATA_0,
+        WINTRUST_FILE_INFO, WTD_CACHE_ONLY_URL_RETRIEVAL, WTD_CHOICE_FILE, WTD_REVOKE_NONE,
+        WTD_STATEACTION_CLOSE, WTD_STATEACTION_VERIFY, WTD_UI_NONE,
     };
 
     // Códigos que o WinVerifyTrust devolve; o crate não os expõe nomeados.
@@ -117,21 +127,29 @@ fn check_trust(path: &str) -> Trust {
             ..Default::default()
         };
         let mut action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-        let status = WinVerifyTrust(windows::Win32::Foundation::HWND::default(), &mut action, &mut data as *mut _ as *mut c_void);
+        let status = WinVerifyTrust(
+            windows::Win32::Foundation::HWND::default(),
+            &mut action,
+            &mut data as *mut _ as *mut c_void,
+        );
 
         // Fechar o estado é obrigatório: sem isso vaza contexto de confiança a cada chamada.
         data.dwStateAction = WTD_STATEACTION_CLOSE;
-        let _ = WinVerifyTrust(windows::Win32::Foundation::HWND::default(), &mut action, &mut data as *mut _ as *mut c_void);
+        let _ = WinVerifyTrust(
+            windows::Win32::Foundation::HWND::default(),
+            &mut action,
+            &mut data as *mut _ as *mut c_void,
+        );
 
         match status {
             0 => Trust::Valid,
             TRUST_E_NOSIGNATURE => Trust::Unsigned,
-            TRUST_E_BAD_DIGEST => Trust::Invalid("arquivo alterado depois de assinado".into()),
-            CERT_E_EXPIRED => Trust::Invalid("certificado expirado".into()),
-            CERT_E_UNTRUSTEDROOT => Trust::Invalid("raiz não confiável".into()),
-            CERT_E_CHAINING => Trust::Invalid("cadeia de certificados incompleta".into()),
-            TRUST_E_EXPLICIT_DISTRUST => Trust::Invalid("certificado marcado como não confiável".into()),
-            other => Trust::Invalid(format!("código 0x{:08X}", other as u32)),
+            TRUST_E_BAD_DIGEST => Trust::Invalid("file changed after signing".into()),
+            CERT_E_EXPIRED => Trust::Invalid("certificate expired".into()),
+            CERT_E_UNTRUSTEDROOT => Trust::Invalid("untrusted root".into()),
+            CERT_E_CHAINING => Trust::Invalid("incomplete certificate chain".into()),
+            TRUST_E_EXPLICIT_DISTRUST => Trust::Invalid("certificate explicitly distrusted".into()),
+            other => Trust::Invalid(format!("code 0x{:08X}", other as u32)),
         }
     }
 }
@@ -140,11 +158,12 @@ fn check_trust(path: &str) -> Trust {
 #[cfg(windows)]
 fn signer_name(path: &str) -> String {
     use windows::Win32::Security::Cryptography::{
-        CertCloseStore, CertFreeCertificateContext, CertGetNameStringW, CertFindCertificateInStore,
+        CertCloseStore, CertFindCertificateInStore, CertFreeCertificateContext, CertGetNameStringW,
         CryptMsgClose, CryptMsgGetParam, CryptQueryObject, CERT_FIND_SUBJECT_CERT,
         CERT_NAME_SIMPLE_DISPLAY_TYPE, CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
-        CERT_QUERY_FORMAT_FLAG_BINARY, CERT_QUERY_OBJECT_FILE, CMSG_SIGNER_INFO_PARAM, CMSG_SIGNER_INFO,
-        CERT_QUERY_ENCODING_TYPE, HCERTSTORE, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
+        CERT_QUERY_ENCODING_TYPE, CERT_QUERY_FORMAT_FLAG_BINARY, CERT_QUERY_OBJECT_FILE,
+        CMSG_SIGNER_INFO, CMSG_SIGNER_INFO_PARAM, HCERTSTORE, PKCS_7_ASN_ENCODING,
+        X509_ASN_ENCODING,
     };
 
     let w = wide(path);
@@ -174,8 +193,14 @@ fn signer_name(path: &str) -> String {
         let mut need = 0u32;
         if CryptMsgGetParam(msg, CMSG_SIGNER_INFO_PARAM, 0, None, &mut need).is_ok() && need > 0 {
             let mut buf = vec![0u8; need as usize];
-            if CryptMsgGetParam(msg, CMSG_SIGNER_INFO_PARAM, 0, Some(buf.as_mut_ptr() as *mut c_void), &mut need)
-                .is_ok()
+            if CryptMsgGetParam(
+                msg,
+                CMSG_SIGNER_INFO_PARAM,
+                0,
+                Some(buf.as_mut_ptr() as *mut c_void),
+                &mut need,
+            )
+            .is_ok()
             {
                 let si = &*(buf.as_ptr() as *const CMSG_SIGNER_INFO);
                 // Localiza no store o certificado cujo emissor+série batem com o do signatário.
@@ -196,7 +221,13 @@ fn signer_name(path: &str) -> String {
                     let n = CertGetNameStringW(ctx, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, None, None);
                     if n > 1 {
                         let mut name = vec![0u16; n as usize];
-                        let got = CertGetNameStringW(ctx, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, None, Some(&mut name));
+                        let got = CertGetNameStringW(
+                            ctx,
+                            CERT_NAME_SIMPLE_DISPLAY_TYPE,
+                            0,
+                            None,
+                            Some(&mut name),
+                        );
                         if got > 1 {
                             out = String::from_utf16_lossy(&name[..got as usize - 1]);
                         }

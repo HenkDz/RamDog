@@ -46,6 +46,24 @@ pub struct Drains {
     exclusions_seeded: bool,
 }
 
+fn service_state(state: SvcState) -> &'static str {
+    match state {
+        SvcState::Running => "running",
+        SvcState::Stopped => "stopped",
+        SvcState::Pending => "pending",
+        SvcState::Missing => "missing",
+    }
+}
+
+fn service_start(start: SvcStart) -> &'static str {
+    match start {
+        SvcStart::Auto => "automatic",
+        SvcStart::Manual => "manual",
+        SvcStart::Disabled => "disabled",
+        SvcStart::Unknown => "unknown",
+    }
+}
+
 impl Drains {
     pub fn new() -> Self {
         let (tx, rx) = channel();
@@ -65,15 +83,75 @@ impl Drains {
     }
 
     pub fn refresh(&mut self) {
-        self.svc = sys::SERVICES.iter().map(|e| sys::query_service(e.name)).collect();
-        self.protected = sys::PROTECTED_SERVICES.iter().map(|(n, _)| sys::query_service(n)).collect();
+        self.svc = sys::SERVICES
+            .iter()
+            .map(|e| sys::query_service(e.name))
+            .collect();
+        self.protected = sys::PROTECTED_SERVICES
+            .iter()
+            .map(|(n, _)| sys::query_service(n))
+            .collect();
         self.defender = sys::defender_status();
         self.appx = sys::installed_appx_families().into_iter().collect();
         self.last_refresh = Some(Instant::now());
     }
 
+    pub fn snapshot_json(&mut self) -> serde_json::Value {
+        self.refresh();
+        let services = sys::SERVICES
+            .iter()
+            .zip(&self.svc)
+            .map(|(entry, status)| {
+                serde_json::json!({
+                    "name": entry.name,
+                    "label": entry.label,
+                    "why": entry.why,
+                    "process_hint": entry.proc_hint,
+                    "stop_only": entry.stop_only,
+                    "state": service_state(status.state),
+                    "start": service_start(status.start),
+                })
+            })
+            .collect::<Vec<_>>();
+        let protected = sys::PROTECTED_SERVICES
+            .iter()
+            .zip(&self.protected)
+            .map(|((name, label), status)| {
+                serde_json::json!({
+                    "name": name,
+                    "label": label,
+                    "state": service_state(status.state),
+                    "start": service_start(status.start),
+                })
+            })
+            .collect::<Vec<_>>();
+        let apps = sys::APPX
+            .iter()
+            .map(|app| serde_json::json!({
+                "label": app.label,
+                "package": app.pkg_name,
+                "why": app.why,
+                "installed": self.appx.iter().any(|family| family.starts_with(app.family_prefix)),
+            }))
+            .collect::<Vec<_>>();
+        serde_json::json!({
+            "supported": true,
+            "defender": {
+                "realtime_disabled": self.defender.realtime_disabled,
+                "tamper_protection": self.defender.tamper_protection,
+                "scan_cpu_factor": self.defender.scan_cpu_factor,
+            },
+            "services": services,
+            "protected_services": protected,
+            "system_apps": apps,
+        })
+    }
+
     fn maybe_refresh(&mut self) {
-        let due = self.last_refresh.map(|t| t.elapsed() > Duration::from_secs(5)).unwrap_or(true);
+        let due = self
+            .last_refresh
+            .map(|t| t.elapsed() > Duration::from_secs(5))
+            .unwrap_or(true);
         if due {
             self.refresh();
         }
@@ -94,7 +172,16 @@ impl Drains {
                 }
             }
         }
-        for d in [".claude", ".codex", ".cargo", ".rustup", ".grok", "AppData\\Roaming\\npm", "AppData\\Local\\hermes", ".buzz"] {
+        for d in [
+            ".claude",
+            ".codex",
+            ".cargo",
+            ".rustup",
+            ".grok",
+            "AppData\\Roaming\\npm",
+            "AppData\\Local\\hermes",
+            ".buzz",
+        ] {
             let path = format!("{home}\\{d}");
             if std::path::Path::new(&path).is_dir() {
                 set.insert(path);
@@ -113,28 +200,37 @@ impl Drains {
             Action::SvcStop(name) => {
                 if is_admin {
                     match sys::stop_service(name) {
-                        Ok(()) => out.push(DrainOut::Toast(format!("{name}: parado"), false)),
-                        Err(e) => out.push(DrainOut::Toast(format!("{name}: {e}"), true)),
-                    }
-                    self.last_refresh = None;
-                } else {
-                    elevated(&format!("{name}: parar"), format!("Stop-Service -Name {} -Force", sys::ps_quote(name)), self);
-                }
-            }
-            Action::SvcDisable(name) => {
-                if is_admin {
-                    let r = sys::set_start_type(name, SvcStart::Disabled).and_then(|_| match sys::stop_service(name) {
-                        Err(e) if e != "já estava parado" => Err(e),
-                        _ => Ok(()),
-                    });
-                    match r {
-                        Ok(()) => out.push(DrainOut::Toast(format!("{name}: desativado (não inicia mais)"), false)),
+                        Ok(()) => out.push(DrainOut::Toast(format!("{name}: stopped"), false)),
                         Err(e) => out.push(DrainOut::Toast(format!("{name}: {e}"), true)),
                     }
                     self.last_refresh = None;
                 } else {
                     elevated(
-                        &format!("{name}: desativar"),
+                        &format!("{name}: stop"),
+                        format!("Stop-Service -Name {} -Force", sys::ps_quote(name)),
+                        self,
+                    );
+                }
+            }
+            Action::SvcDisable(name) => {
+                if is_admin {
+                    let r = sys::set_start_type(name, SvcStart::Disabled).and_then(|_| {
+                        match sys::stop_service(name) {
+                            Err(e) if e != "already stopped" => Err(e),
+                            _ => Ok(()),
+                        }
+                    });
+                    match r {
+                        Ok(()) => out.push(DrainOut::Toast(
+                            format!("{name}: disabled (will not start again)"),
+                            false,
+                        )),
+                        Err(e) => out.push(DrainOut::Toast(format!("{name}: {e}"), true)),
+                    }
+                    self.last_refresh = None;
+                } else {
+                    elevated(
+                        &format!("{name}: disable"),
                         format!("Set-Service -Name {0} -StartupType Disabled; Stop-Service -Name {0} -Force -ErrorAction SilentlyContinue", sys::ps_quote(name)),
                         self,
                     );
@@ -142,31 +238,54 @@ impl Drains {
             }
             Action::SvcEnable(name) => {
                 if is_admin {
-                    let r = sys::set_start_type(name, SvcStart::Auto).and_then(|_| sys::start_service(name));
+                    let r = sys::set_start_type(name, SvcStart::Auto)
+                        .and_then(|_| sys::start_service(name));
                     match r {
-                        Ok(()) => out.push(DrainOut::Toast(format!("{name}: reativado"), false)),
+                        Ok(()) => out.push(DrainOut::Toast(format!("{name}: re-enabled"), false)),
                         Err(e) => out.push(DrainOut::Toast(format!("{name}: {e}"), true)),
                     }
                     self.last_refresh = None;
                 } else {
                     elevated(
-                        &format!("{name}: reativar"),
-                        format!("Set-Service -Name {0} -StartupType Automatic; Start-Service -Name {0}", sys::ps_quote(name)),
+                        &format!("{name}: re-enable"),
+                        format!(
+                            "Set-Service -Name {0} -StartupType Automatic; Start-Service -Name {0}",
+                            sys::ps_quote(name)
+                        ),
                         self,
                     );
                 }
             }
             Action::DefenderExclude(paths) => {
-                let list = paths.iter().map(|p| sys::ps_quote(p)).collect::<Vec<_>>().join(",");
-                elevated("Defender: exclusões", format!("Add-MpPreference -ExclusionPath {list}"), self);
+                let list = paths
+                    .iter()
+                    .map(|p| sys::ps_quote(p))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                elevated(
+                    "Defender: exclusions",
+                    format!("Add-MpPreference -ExclusionPath {list}"),
+                    self,
+                );
             }
             Action::DefenderCpu(f) => {
-                elevated("Defender: CPU de varredura", format!("Set-MpPreference -ScanAvgCPULoadFactor {f}"), self);
+                elevated(
+                    "Defender: scan CPU",
+                    format!("Set-MpPreference -ScanAvgCPULoadFactor {f}"),
+                    self,
+                );
             }
             Action::DefenderRealtime(disable) => {
                 elevated(
-                    if disable { "Defender: pausar tempo real" } else { "Defender: reativar tempo real" },
-                    format!("Set-MpPreference -DisableRealtimeMonitoring ${}", if disable { "true" } else { "false" }),
+                    if disable {
+                        "Defender: pause real-time"
+                    } else {
+                        "Defender: re-enable real-time"
+                    },
+                    format!(
+                        "Set-MpPreference -DisableRealtimeMonitoring ${}",
+                        if disable { "true" } else { "false" }
+                    ),
                     self,
                 );
             }
@@ -174,8 +293,11 @@ impl Drains {
                 // Remove-AppxPackage do usuário atual não exige admin, mas rodamos elevado para
                 // cobrir pacotes provisionados (-AllUsers) e ter um único caminho de erro.
                 elevated(
-                    &format!("desinstalar {pkg}"),
-                    format!("Get-AppxPackage -Name {0} -AllUsers | Remove-AppxPackage -AllUsers", sys::ps_quote(pkg)),
+                    &format!("uninstall {pkg}"),
+                    format!(
+                        "Get-AppxPackage -Name {0} -AllUsers | Remove-AppxPackage -AllUsers",
+                        sys::ps_quote(pkg)
+                    ),
                     self,
                 );
             }
@@ -209,7 +331,9 @@ impl Drains {
                 let cl = p.cmdline.to_lowercase();
                 for e in sys::SERVICES {
                     if cl.contains(&format!("-s {}", e.name.to_lowercase())) {
-                        let x = svchost_hint.entry(e.name).or_insert((0u64, 0f32, Vec::new()));
+                        let x = svchost_hint
+                            .entry(e.name)
+                            .or_insert((0u64, 0f32, Vec::new()));
                         x.0 += p.private_ws;
                         x.1 += p.cpu_pct;
                         x.2.push(p.pid);
@@ -228,18 +352,18 @@ impl Drains {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Ralos do Windows").strong().size(16.0));
-                ui.label(RichText::new("— o que consome RAM/CPU sem você pedir, e o que dá para fazer a respeito").color(muted));
+                ui.label(RichText::new("Windows drains").strong().size(16.0));
+                ui.label(RichText::new("— what uses RAM/CPU without being asked, and what you can do about it").color(muted));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("Atualizar").clicked() {
+                    if ui.small_button("Refresh").clicked() {
                         self.last_refresh = None;
                     }
                     if self.busy > 0 {
                         ui.spinner();
-                        ui.label(RichText::new(format!("{} ação(ões) aguardando UAC/PowerShell", self.busy)).color(muted).small());
+                        ui.label(RichText::new(format!("{} action(s) waiting for UAC/PowerShell", self.busy)).color(muted).small());
                     }
                     if !is_admin {
-                        ui.label(RichText::new("sem admin: cada ação abre um UAC").color(muted).small());
+                        ui.label(RichText::new("not elevated: each action opens a UAC prompt").color(muted).small());
                     }
                 });
             });
@@ -248,68 +372,68 @@ impl Drains {
             // ---------- Defender ----------
             let (mp_ram, mp_cpu, _) = by_name.get("msmpeng.exe").cloned().unwrap_or((0, 0.0, Vec::new()));
             section(ui, "Microsoft Defender", &format!("MsMpEng.exe {} · CPU {:.1}%", fmt_bytes(mp_ram), mp_cpu), |ui| {
-                ui.label(RichText::new("Processo protegido pelo kernel: nem admin consegue finalizá-lo, e o serviço WinDefend não aceita parar. O que funciona é reduzir o trabalho dele:").color(muted));
+                ui.label(RichText::new("Kernel-protected process: even an administrator cannot terminate it, and the WinDefend service cannot be stopped. What works is reducing its workload:").color(muted));
                 ui.add_space(4.0);
                 let d = self.defender.clone();
                 ui.horizontal(|ui| {
-                    pill(ui, "tempo real", match d.realtime_disabled { Some(true) => ("pausado", warn_c), Some(false) => ("ativo", ok_c), None => ("?", muted) });
-                    pill(ui, "tamper protection", match d.tamper_protection { Some(true) => ("ligado", accent), Some(false) => ("desligado", muted), None => ("?", muted) });
-                    pill(ui, "CPU varredura agendada", (&format!("{}%", d.scan_cpu_factor.map(|v| v.to_string()).unwrap_or_else(|| "50 (padrão)".into())), muted));
+                    pill(ui, "real-time", match d.realtime_disabled { Some(true) => ("paused", warn_c), Some(false) => ("active", ok_c), None => ("?", muted) });
+                    pill(ui, "tamper protection", match d.tamper_protection { Some(true) => ("on", accent), Some(false) => ("off", muted), None => ("?", muted) });
+                    pill(ui, "scheduled scan CPU", (&format!("{}%", d.scan_cpu_factor.map(|v| v.to_string()).unwrap_or_else(|| "50 (default)".into())), muted));
                 });
                 ui.add_space(6.0);
 
-                ui.label(RichText::new("1. Excluir pastas de projeto/agentes da varredura em tempo real").strong());
-                ui.label(RichText::new("É onde o Defender gasta CPU/RAM: cada arquivo que node/cargo/git tocam é escaneado. Uma pasta por linha; edite à vontade.").color(muted).small());
+                ui.label(RichText::new("1. Exclude project/agent folders from real-time scanning").strong());
+                ui.label(RichText::new("This is where Defender spends CPU/RAM: every file node/cargo/git touches is scanned. One folder per line; edit freely.").color(muted).small());
                 ui.add(egui::TextEdit::multiline(&mut self.exclusions_text).desired_rows(4).desired_width(f32::INFINITY).font(egui::TextStyle::Monospace));
                 ui.horizontal(|ui| {
-                    if ui.add(egui::Button::new(RichText::new("Adicionar exclusões").strong())).clicked() {
+                    if ui.add(egui::Button::new(RichText::new("Add exclusions").strong())).clicked() {
                         let paths: Vec<String> = self.exclusions_text.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
                         if paths.is_empty() {
-                            out.push(DrainOut::Toast("Nenhuma pasta informada".into(), true));
+                            out.push(DrainOut::Toast("No folders provided".into(), true));
                         } else {
                             confirm = Some(Pending {
-                                title: "Excluir pastas da varredura do Defender".into(),
+                                title: "Exclude folders from Defender scanning".into(),
                                 lines: paths.clone(),
                                 action: Action::DefenderExclude(paths),
                             });
                         }
                     }
-                    ui.label(RichText::new("Add-MpPreference -ExclusionPath · arquivos nessas pastas deixam de ser verificados").color(muted).small());
+                    ui.label(RichText::new("Add-MpPreference -ExclusionPath · files in these folders will not be scanned").color(muted).small());
                 });
                 ui.add_space(6.0);
 
-                ui.label(RichText::new("2. Limitar CPU da varredura agendada").strong());
+                ui.label(RichText::new("2. Limit scheduled scan CPU").strong());
                 ui.horizontal(|ui| {
                     for f in [5u32, 10, 20] {
                         if ui.button(format!("{f}%")).clicked() {
                             queued.push(Action::DefenderCpu(f));
                         }
                     }
-                    ui.label(RichText::new("Set-MpPreference -ScanAvgCPULoadFactor · vale para as varreduras completas/agendadas").color(muted).small());
+                    ui.label(RichText::new("Set-MpPreference -ScanAvgCPULoadFactor · applies to full/scheduled scans").color(muted).small());
                 });
                 ui.add_space(6.0);
 
-                ui.label(RichText::new("3. Pausar a proteção em tempo real").strong());
+                ui.label(RichText::new("3. Pause real-time protection").strong());
                 ui.horizontal(|ui| {
                     let tp_on = d.tamper_protection == Some(true);
                     let paused = d.realtime_disabled == Some(true);
                     if paused {
-                        if ui.button("Reativar tempo real").clicked() {
+                        if ui.button("Re-enable real-time").clicked() {
                             queued.push(Action::DefenderRealtime(false));
                         }
                     } else {
-                        let b = ui.add_enabled(!tp_on, egui::Button::new(RichText::new("Pausar tempo real").color(warn_c)));
+                        let b = ui.add_enabled(!tp_on, egui::Button::new(RichText::new("Pause real-time").color(warn_c)));
                         if b.clicked() {
                             confirm = Some(Pending {
-                                title: "Pausar proteção em tempo real do Defender".into(),
-                                lines: vec!["Sem verificação de arquivos/downloads até você reativar (o Windows costuma religar sozinho depois de um tempo ou no reboot).".into()],
+                                title: "Pause Defender real-time protection".into(),
+                                lines: vec!["Files and downloads will not be scanned until you re-enable it (Windows often turns it back on after a while or on reboot).".into()],
                                 action: Action::DefenderRealtime(true),
                             });
                         }
                     }
                     if tp_on {
-                        ui.label(RichText::new("bloqueado pelo Tamper Protection — desligue-o em Segurança do Windows › Proteção contra vírus › Gerenciar configurações").color(muted).small());
-                        if ui.small_button("Abrir Segurança do Windows").clicked() {
+                        ui.label(RichText::new("blocked by Tamper Protection — turn it off in Windows Security › Virus & threat protection › Manage settings").color(muted).small());
+                        if ui.small_button("Open Windows Security").clicked() {
                             crate::app::open_url("windowsdefender://threatsettings");
                         }
                     }
@@ -317,13 +441,13 @@ impl Drains {
             });
 
             // ---------- Serviços ----------
-            section(ui, "Serviços dispensáveis", "parar agora ou desativar de vez (não iniciam mais)", |ui| {
+            section(ui, "Optional services", "stop now or disable permanently (they will not start again)", |ui| {
                 egui::Grid::new("svc_grid").num_columns(5).spacing([14.0, 6.0]).striped(true).show(ui, |ui| {
-                    ui.label(RichText::new("Serviço").strong());
-                    ui.label(RichText::new("O que é").strong());
-                    ui.label(RichText::new("Estado").strong());
+                    ui.label(RichText::new("Service").strong());
+                    ui.label(RichText::new("What it is").strong());
+                    ui.label(RichText::new("Status").strong());
                     ui.label(RichText::new("RAM").strong());
-                    ui.label(RichText::new("Ações").strong());
+                    ui.label(RichText::new("Actions").strong());
                     ui.end_row();
                     for (i, e) in sys::SERVICES.iter().enumerate() {
                         let st = self.svc.get(i).cloned().unwrap_or(SvcStatus { state: SvcState::Missing, start: SvcStart::Unknown });
@@ -341,16 +465,16 @@ impl Drains {
                         });
                         ui.vertical(|ui| {
                             let (s, c) = match st.state {
-                                SvcState::Running => ("em execução", accent),
-                                SvcState::Stopped => ("parado", muted),
-                                SvcState::Pending => ("mudando…", muted),
+                                SvcState::Running => ("running", accent),
+                                SvcState::Stopped => ("stopped", muted),
+                                SvcState::Pending => ("changing…", muted),
                                 SvcState::Missing => ("—", muted),
                             };
                             ui.label(RichText::new(s).color(c));
                             let start = match st.start {
-                                SvcStart::Auto => "início automático",
-                                SvcStart::Manual => "início manual",
-                                SvcStart::Disabled => "desativado",
+                                SvcStart::Auto => "automatic start",
+                                SvcStart::Manual => "manual start",
+                                SvcStart::Disabled => "disabled",
                                 SvcStart::Unknown => "",
                             };
                             ui.label(RichText::new(start).small().color(if st.start == SvcStart::Disabled { ok_c } else { muted }));
@@ -366,19 +490,19 @@ impl Drains {
                         };
                         ui.label(RichText::new(if ram > 0 { fmt_bytes_short(ram) } else { "–".into() }).monospace());
                         ui.horizontal(|ui| {
-                            if st.state == SvcState::Running && ui.small_button("Parar").on_hover_text("Para agora; volta no próximo boot (ou quando algo pedir)").clicked() {
+                            if st.state == SvcState::Running && ui.small_button("Stop").on_hover_text("Stops it now; it returns on the next boot (or when something requests it)").clicked() {
                                 queued.push(Action::SvcStop(e.name));
                             }
                             if !e.stop_only {
                                 if st.start != SvcStart::Disabled {
-                                    if ui.add(egui::Button::new(RichText::new("Desativar").color(warn_c)).small()).on_hover_text("Para e impede de iniciar de novo").clicked() {
+                                    if ui.add(egui::Button::new(RichText::new("Disable").color(warn_c)).small()).on_hover_text("Stops it and prevents it from starting again").clicked() {
                                         confirm = Some(Pending {
-                                            title: format!("Desativar {}", e.label),
-                                            lines: vec![e.why.to_string(), format!("Serviço {} → StartupType Disabled. Reversível aqui mesmo (Reativar).", e.name)],
+                                            title: format!("Disable {}", e.label),
+                                            lines: vec![e.why.to_string(), format!("Service {} → StartupType Disabled. Reversible here (Re-enable).", e.name)],
                                             action: Action::SvcDisable(e.name),
                                         });
                                     }
-                                } else if ui.small_button("Reativar").clicked() {
+                                } else if ui.small_button("Re-enable").clicked() {
                                     queued.push(Action::SvcEnable(e.name));
                                 }
                             }
@@ -397,9 +521,9 @@ impl Drains {
                         });
                         ui.vertical(|ui| {
                             ui.set_max_width(440.0);
-                            ui.add(egui::Label::new(RichText::new("Protegido pelo Windows — não pode ser parado nem finalizado. Use as ações do Defender acima.").color(muted).small()).wrap());
+                            ui.add(egui::Label::new(RichText::new("Protected by Windows — cannot be stopped or terminated. Use the Defender actions above.").color(muted).small()).wrap());
                         });
-                        ui.label(RichText::new("em execução").color(muted));
+                        ui.label(RichText::new("running").color(muted));
                         let pn = match *name { "WinDefend" => "msmpeng.exe", "WdNisSvc" => "nissrv.exe", _ => "mpdefendercoreservice.exe" };
                         ui.label(RichText::new(by_name.get(pn).map(|x| fmt_bytes_short(x.0)).unwrap_or_else(|| "–".into())).monospace());
                         ui.label(RichText::new("🔒").color(muted));
@@ -409,7 +533,7 @@ impl Drains {
             });
 
             // ---------- Apps de sistema ----------
-            section(ui, "Apps de sistema dispensáveis", "instalados neste usuário — finalizar agora ou desinstalar", |ui| {
+            section(ui, "Optional system apps", "installed for this user — terminate now or uninstall", |ui| {
                 let mut any = false;
                 egui::Grid::new("appx_grid").num_columns(4).spacing([14.0, 6.0]).striped(true).show(ui, |ui| {
                     for a in sys::APPX {
@@ -428,15 +552,15 @@ impl Drains {
                         }
                         ui.vertical(|ui| { ui.set_width(230.0); ui.label(RichText::new(a.label).strong()); });
                         ui.vertical(|ui| { ui.set_max_width(440.0); ui.add(egui::Label::new(RichText::new(a.why).color(muted).small()).wrap()); });
-                        ui.label(RichText::new(if ram > 0 { format!("{} · {} proc.", fmt_bytes_short(ram), pids.len()) } else { "não está rodando".into() }).color(if ram > 0 { accent } else { muted }).monospace());
+                        ui.label(RichText::new(if ram > 0 { format!("{} · {} proc.", fmt_bytes_short(ram), pids.len()) } else { "not running".into() }).color(if ram > 0 { accent } else { muted }).monospace());
                         ui.horizontal(|ui| {
-                            if !pids.is_empty() && ui.small_button("Finalizar").on_hover_text("Encerra os processos agora (o app pode voltar sozinho)").clicked() {
+                            if !pids.is_empty() && ui.small_button("Terminate").on_hover_text("Terminates the processes now (the app may return on its own)").clicked() {
                                 out.push(DrainOut::Kill(pids.clone()));
                             }
-                            if ui.add(egui::Button::new(RichText::new("Desinstalar").color(warn_c)).small()).clicked() {
+                            if ui.add(egui::Button::new(RichText::new("Uninstall").color(warn_c)).small()).clicked() {
                                 confirm = Some(Pending {
-                                    title: format!("Desinstalar {}", a.label),
-                                    lines: vec![a.why.to_string(), format!("Get-AppxPackage {} | Remove-AppxPackage. Dá para reinstalar pela Microsoft Store.", a.pkg_name)],
+                                    title: format!("Uninstall {}", a.label),
+                                    lines: vec![a.why.to_string(), format!("Get-AppxPackage {} | Remove-AppxPackage. It can be reinstalled from the Microsoft Store.", a.pkg_name)],
                                     action: Action::AppxRemove(a.pkg_name),
                                 });
                             }
@@ -445,12 +569,12 @@ impl Drains {
                     }
                 });
                 if !any {
-                    ui.label(RichText::new("Nenhum dos apps catalogados está instalado.").color(muted));
+                    ui.label(RichText::new("None of the cataloged apps are installed.").color(muted));
                 }
             });
 
             ui.add_space(8.0);
-            ui.label(RichText::new("O que sobe com o PC (registro, pasta Iniciar, tarefas, serviços) está na visão Partida — não o recorte do Gerenciador de Tarefas.").color(muted).small());
+            ui.label(RichText::new("Everything that starts with the PC (registry, startup folder, tasks, services) is in the Startup view — beyond Task Manager's limited list.").color(muted).small());
             ui.add_space(12.0);
         });
 
@@ -464,8 +588,16 @@ impl Drains {
         if self.pending.is_some() {
             let mut go = false;
             let mut cancel = false;
-            let title = self.pending.as_ref().map(|p| p.title.clone()).unwrap_or_default();
-            let lines = self.pending.as_ref().map(|p| p.lines.clone()).unwrap_or_default();
+            let title = self
+                .pending
+                .as_ref()
+                .map(|p| p.title.clone())
+                .unwrap_or_default();
+            let lines = self
+                .pending
+                .as_ref()
+                .map(|p| p.lines.clone())
+                .unwrap_or_default();
             let modal = egui::Modal::new(egui::Id::new("drain_confirm")).show(ui.ctx(), |ui| {
                 ui.set_width(520.0);
                 ui.heading(&title);
@@ -475,16 +607,27 @@ impl Drains {
                 }
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    if ui.add(egui::Button::new(RichText::new("Confirmar").strong()).fill(Color32::from_rgb(160, 60, 55))).clicked() {
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new("Confirm").strong())
+                                .fill(Color32::from_rgb(160, 60, 55)),
+                        )
+                        .clicked()
+                    {
                         go = true;
                     }
-                    if ui.button("Cancelar").clicked() {
+                    if ui.button("Cancel").clicked() {
                         cancel = true;
                     }
-                    ui.label(RichText::new("Enter confirma · Esc cancela").weak().small());
+                    ui.label(RichText::new("Enter confirms · Esc cancels").weak().small());
                 });
             });
-            let (enter, esc) = ui.ctx().input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+            let (enter, esc) = ui.ctx().input(|i| {
+                (
+                    i.key_pressed(egui::Key::Enter),
+                    i.key_pressed(egui::Key::Escape),
+                )
+            });
             if enter {
                 go = true;
             }
@@ -533,5 +676,3 @@ fn pill(ui: &mut egui::Ui, label: &str, (value, color): (&str, Color32)) {
             });
         });
 }
-
-

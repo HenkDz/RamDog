@@ -32,6 +32,8 @@ if curl -fsSL "$url" -o "$tmp/rd.tgz"; then
     echo "zip sem ramdog"; exit 1
   fi
   install -m 755 "$bin" "$DEST/ramdog"
+  cli="$(find "$tmp" -name ramdog-cli -type f | head -n 1)"
+  if [ -n "$cli" ]; then install -m 755 "$cli" "$DEST/ramdog-cli"; fi
 else
   echo "Release macOS ainda nao publicado. Compilando do source (precisa rustup + git)..."
   if ! command -v cargo >/dev/null 2>&1; then
@@ -41,6 +43,7 @@ else
   git clone --depth 1 "https://github.com/$REPO.git" "$tmp/src"
   cargo build --release --manifest-path "$tmp/src/Cargo.toml"
   install -m 755 "$tmp/src/target/release/ramdog" "$DEST/ramdog"
+  if [ -f "$tmp/src/target/release/ramdog-cli" ]; then install -m 755 "$tmp/src/target/release/ramdog-cli" "$DEST/ramdog-cli"; fi
 fi
 
 case ":$PATH:" in
@@ -49,5 +52,6 @@ case ":$PATH:" in
 esac
 
 echo "Instalado: $DEST/ramdog"
+[ -x "$DEST/ramdog-cli" ] && echo "Agent CLI: $DEST/ramdog-cli"
 echo "Abrir:  ramdog"
 exec "$DEST/ramdog"

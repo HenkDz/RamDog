@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod cli;
 #[cfg(windows)]
 mod boot;
 #[cfg(not(windows))]
@@ -24,6 +25,15 @@ mod signature;
 mod sys;
 
 fn main() -> eframe::Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.is_empty() {
+        let code = cli::run(args);
+        if code != 0 {
+            std::process::exit(code);
+        }
+        return Ok(());
+    }
+
     procs::enable_debug_privilege();
     // A janela já nasce no modo em que o app foi fechado. Abrir grande e encolher no
     // primeiro frame faria o HUD "piscar" em tela cheia a cada abertura.

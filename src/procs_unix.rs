@@ -35,13 +35,11 @@ impl Sampler {
             let pid_u = pid.as_u32();
             seen.insert(pid_u, ());
             let name = os(p.name());
-            let exe = p.exe().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
-            let cmdline = p
-                .cmd()
-                .iter()
-                .map(os)
-                .collect::<Vec<_>>()
-                .join(" ");
+            let exe = p
+                .exe()
+                .map(|x| x.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let cmdline = p.cmd().iter().map(os).collect::<Vec<_>>().join(" ");
             let lines: Vec<String> = p.environ().iter().map(os).collect();
             let launcher = launcher_from_env_lines(&lines);
             let io = p.disk_usage();
@@ -128,7 +126,7 @@ pub fn kill(pid: u32) -> Result<(), String> {
         let err = std::io::Error::last_os_error();
         match err.raw_os_error() {
             Some(1) => Err("acesso negado (sudo?)".into()),
-            Some(3) => Err("processo já encerrado".into()),
+            Some(3) => Err("process already exited".into()),
             _ => Err(err.to_string()),
         }
     }

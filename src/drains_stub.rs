@@ -14,11 +14,15 @@ impl Drains {
         Self
     }
 
+    pub fn snapshot_json(&mut self) -> serde_json::Value {
+        serde_json::json!({ "supported": false, "reason": "Defender, services, and Appx are Windows-only" })
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui, _procs: &[ProcInfo], _is_admin: bool) -> Vec<DrainOut> {
         ui.add_space(16.0);
-        ui.label("Ralos (Defender, serviços, Appx) são específicos do Windows.");
+        ui.label("Drains (Defender, services, Appx) are Windows-specific.");
         ui.add_space(8.0);
-        ui.label("No macOS o RamDog lista, categoriza e finaliza processos — essa aba não tem equivalente.");
+        ui.label("On macOS RamDog lists, categorizes, and terminates processes — this view has no equivalent.");
         Vec::new()
     }
 }

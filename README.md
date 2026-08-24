@@ -66,6 +66,22 @@ cd RamDog
 cargo build --release
 ```
 
+### Agent interface
+
+The same executable exposes structured data for agents:
+
+```powershell
+ramdog snapshot --json
+ramdog inspect --pid <PID>
+ramdog tree --pid <PID>
+ramdog ai-sessions
+ramdog startup
+ramdog drains
+ramdog mcp
+```
+
+`ramdog mcp` is a local read-only MCP server over stdio. Termination requires explicit confirmation and a fresh process creation time.
+
 Windows, helper de temperatura (opcional, [SDK .NET 8](https://dotnet.microsoft.com/download/dotnet/8.0)):
 
 ```bash

@@ -11,11 +11,12 @@ use std::time::{Duration, Instant};
 
 use egui::{Color32, RichText};
 use egui_extras::{Column, TableBuilder};
-use windows::core::{BSTR, Interface, IUnknown, PCWSTR};
+use windows::core::{IUnknown, Interface, BSTR, PCWSTR};
 
 use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, STGM_READ,
+    CoCreateInstance, CoInitializeEx, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+    STGM_READ,
 };
 use windows::Win32::System::Registry::{
     HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_EXPAND_SZ, REG_SZ,
@@ -23,10 +24,10 @@ use windows::Win32::System::Registry::{
 use windows::Win32::System::Services::{
     CloseServiceHandle, EnumServicesStatusExW, OpenSCManagerW, OpenServiceW, QueryServiceConfig2W,
     QueryServiceConfigW, ENUM_SERVICE_STATUS_PROCESSW, QUERY_SERVICE_CONFIGW, SC_ENUM_PROCESS_INFO,
-    SC_HANDLE, SC_MANAGER_CONNECT, SC_MANAGER_ENUMERATE_SERVICE, SERVICE_AUTO_START, SERVICE_BOOT_START,
-    SERVICE_CONFIG_DELAYED_AUTO_START_INFO, SERVICE_DELAYED_AUTO_START_INFO, SERVICE_DEMAND_START,
-    SERVICE_DISABLED, SERVICE_DRIVER, SERVICE_QUERY_CONFIG, SERVICE_QUERY_STATUS, SERVICE_RUNNING,
-    SERVICE_STATE_ALL, SERVICE_SYSTEM_START, SERVICE_WIN32,
+    SC_HANDLE, SC_MANAGER_CONNECT, SC_MANAGER_ENUMERATE_SERVICE, SERVICE_AUTO_START,
+    SERVICE_BOOT_START, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, SERVICE_DELAYED_AUTO_START_INFO,
+    SERVICE_DEMAND_START, SERVICE_DISABLED, SERVICE_DRIVER, SERVICE_QUERY_CONFIG,
+    SERVICE_QUERY_STATUS, SERVICE_RUNNING, SERVICE_STATE_ALL, SERVICE_SYSTEM_START, SERVICE_WIN32,
 };
 use windows::Win32::System::TaskScheduler::{
     IRegisteredTaskCollection, ITaskFolder, ITaskService, TaskScheduler, TASK_ENUM_HIDDEN,
@@ -69,27 +70,27 @@ impl Kind {
 
     fn label(self) -> &'static str {
         match self {
-            Kind::Run => "Registro",
-            Kind::Folder => "Pasta Iniciar",
-            Kind::Task => "Tarefa",
-            Kind::Service => "Serviço",
+            Kind::Run => "Registry",
+            Kind::Folder => "Startup folder",
+            Kind::Task => "Task",
+            Kind::Service => "Service",
             Kind::Driver => "Driver",
-            Kind::Uwp => "App UWP",
+            Kind::Uwp => "UWP app",
             Kind::Winlogon => "Winlogon",
-            Kind::Other => "Outro",
+            Kind::Other => "Other",
         }
     }
 
     fn chip(self) -> &'static str {
         match self {
-            Kind::Run => "Registro",
-            Kind::Folder => "Pasta",
-            Kind::Task => "Tarefas",
-            Kind::Service => "Serviços",
+            Kind::Run => "Registry",
+            Kind::Folder => "Folder",
+            Kind::Task => "Tasks",
+            Kind::Service => "Services",
             Kind::Driver => "Drivers",
             Kind::Uwp => "UWP",
             Kind::Winlogon => "Winlogon",
-            Kind::Other => "Outros",
+            Kind::Other => "Other",
         }
     }
 
@@ -109,11 +110,25 @@ impl Kind {
 
 #[derive(Clone)]
 enum Target {
-    Run { machine: bool, wow64: bool, name: String },
-    Folder { common: bool, file_name: String, path: PathBuf },
-    Task { path: String },
-    Service { name: String },
-    Uwp { key: String },
+    Run {
+        machine: bool,
+        wow64: bool,
+        name: String,
+    },
+    Folder {
+        common: bool,
+        file_name: String,
+        path: PathBuf,
+    },
+    Task {
+        path: String,
+    },
+    Service {
+        name: String,
+    },
+    Uwp {
+        key: String,
+    },
     ReadOnly,
 }
 
@@ -166,7 +181,11 @@ impl Boot {
         Self {
             entries: Vec::new(),
             last_refresh: None,
-            kinds: Kind::ALL.iter().copied().filter(|k| *k != Kind::Driver).collect(),
+            kinds: Kind::ALL
+                .iter()
+                .copied()
+                .filter(|k| *k != Kind::Driver)
+                .collect(),
             hide_microsoft: false,
             only_enabled: false,
             only_running: false,
@@ -183,14 +202,44 @@ impl Boot {
         self.last_refresh = Some(Instant::now());
     }
 
+    pub fn snapshot_json(&mut self) -> serde_json::Value {
+        self.refresh();
+        serde_json::json!({
+            "supported": true,
+            "entries": self.entries.iter().map(|e| serde_json::json!({
+                "id": e.id,
+                "name": e.name,
+                "command": e.command,
+                "kind": e.kind.label(),
+                "machine": e.machine,
+                "enabled": e.enabled,
+                "missing": e.missing,
+                "can_toggle": e.can_toggle,
+                "can_remove": e.can_remove,
+                "microsoft": e.microsoft,
+                "origin": e.origin,
+                "running": e.running_hint,
+            })).collect::<Vec<_>>(),
+        })
+    }
+
     fn maybe_refresh(&mut self) {
-        let due = self.last_refresh.map(|t| t.elapsed() > Duration::from_secs(8)).unwrap_or(true);
+        let due = self
+            .last_refresh
+            .map(|t| t.elapsed() > Duration::from_secs(8))
+            .unwrap_or(true);
         if due {
             self.refresh();
         }
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, procs: &[ProcInfo], search: &str, is_admin: bool) -> Vec<BootOut> {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        procs: &[ProcInfo],
+        search: &str,
+        is_admin: bool,
+    ) -> Vec<BootOut> {
         while let Ok(_r) = self.rx.try_recv() {
             self.busy = self.busy.saturating_sub(1);
             self.last_refresh = None;
@@ -230,24 +279,24 @@ impl Boot {
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Partida").strong().size(16.0));
+            ui.label(RichText::new("Startup").strong().size(16.0));
             ui.label(
-                RichText::new("— tudo que o Windows dispara no boot e no logon, sem o recorte do Gerenciador de Tarefas")
+                RichText::new("— everything Windows launches at boot and logon, beyond Task Manager's limited list")
                     .color(MUTED),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("Atualizar").clicked() {
+                if ui.small_button("Refresh").clicked() {
                     self.last_refresh = None;
                 }
                 if self.busy > 0 {
                     ui.spinner();
-                    ui.label(RichText::new(format!("{} ação(ões) aguardando UAC", self.busy)).color(MUTED).small());
+                    ui.label(RichText::new(format!("{} action(s) waiting for UAC", self.busy)).color(MUTED).small());
                 }
             });
         });
         ui.label(
             RichText::new(format!(
-                "{} entradas · {} ativas · {} visíveis agora",
+                "{} entries · {} enabled · {} visible now",
                 self.entries.len(),
                 self.entries.iter().filter(|e| e.enabled).count(),
                 filtered.len()
@@ -263,9 +312,13 @@ impl Boot {
                 let n = self.entries.iter().filter(|e| e.kind == k).count();
                 let on = self.kinds.contains(&k);
                 let label = format!("{} {n}", k.chip());
-                let text = RichText::new(label).size(12.0).color(if on { k.color() } else { MUTED });
+                let text =
+                    RichText::new(label)
+                        .size(12.0)
+                        .color(if on { k.color() } else { MUTED });
                 let btn = if on {
-                    egui::Button::new(text).stroke(egui::Stroke::new(1.0_f32, k.color().gamma_multiply(0.55)))
+                    egui::Button::new(text)
+                        .stroke(egui::Stroke::new(1.0_f32, k.color().gamma_multiply(0.55)))
                 } else {
                     egui::Button::new(text).fill(Color32::TRANSPARENT)
                 };
@@ -279,9 +332,9 @@ impl Boot {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut self.hide_microsoft, "esconder Microsoft");
-            ui.checkbox(&mut self.only_enabled, "só ativas");
-            ui.checkbox(&mut self.only_running, "só as que estão rodando");
+            ui.checkbox(&mut self.hide_microsoft, "hide Microsoft");
+            ui.checkbox(&mut self.only_enabled, "enabled only");
+            ui.checkbox(&mut self.only_running, "running only");
         });
         ui.add_space(4.0);
 
@@ -306,12 +359,24 @@ impl Boot {
             .column(Column::initial(132.0).at_least(90.0))
             .header(22.0, |mut h| {
                 h.col(|_| {});
-                h.col(|ui| { ui.label(RichText::new("Nome").small().color(MUTED).strong()); });
-                h.col(|ui| { ui.label(RichText::new("Origem").small().color(MUTED).strong()); });
-                h.col(|ui| { ui.label(RichText::new("Escopo").small().color(MUTED).strong()); });
-                h.col(|ui| { ui.label(RichText::new("Comando").small().color(MUTED).strong()); });
-                h.col(|ui| { ui.label(RichText::new("Estado").small().color(MUTED).strong()); });
-                h.col(|ui| { ui.label(RichText::new("Ações").small().color(MUTED).strong()); });
+                h.col(|ui| {
+                    ui.label(RichText::new("Name").small().color(MUTED).strong());
+                });
+                h.col(|ui| {
+                    ui.label(RichText::new("Origin").small().color(MUTED).strong());
+                });
+                h.col(|ui| {
+                    ui.label(RichText::new("Scope").small().color(MUTED).strong());
+                });
+                h.col(|ui| {
+                    ui.label(RichText::new("Command").small().color(MUTED).strong());
+                });
+                h.col(|ui| {
+                    ui.label(RichText::new("Status").small().color(MUTED).strong());
+                });
+                h.col(|ui| {
+                    ui.label(RichText::new("Actions").small().color(MUTED).strong());
+                });
             })
             .body(|body| {
                 body.rows(row_h, n, |mut row| {
@@ -347,24 +412,29 @@ impl Boot {
                     });
                     row.col(|ui| {
                         ui.label(
-                            RichText::new(if e.machine { "máquina" } else { "usuário" })
+                            RichText::new(if e.machine { "machine" } else { "user" })
                                 .small()
                                 .color(MUTED),
                         );
                     });
                     row.col(|ui| {
-                        ui.add(egui::Label::new(RichText::new(&e.command).monospace().small().color(MUTED)).truncate())
-                            .on_hover_text(&e.command);
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&e.command).monospace().small().color(MUTED),
+                            )
+                            .truncate(),
+                        )
+                        .on_hover_text(&e.command);
                     });
                     row.col(|ui| {
                         let (txt, c) = if e.missing {
-                            ("ausente", Color32::from_rgb(232, 120, 100))
+                            ("missing", Color32::from_rgb(232, 120, 100))
                         } else if is_run {
-                            ("rodando", Color32::from_rgb(120, 200, 140))
+                            ("running", Color32::from_rgb(120, 200, 140))
                         } else if e.enabled {
-                            ("no boot", Color32::from_rgb(232, 178, 92))
+                            ("at startup", Color32::from_rgb(232, 178, 92))
                         } else {
-                            ("desligada", MUTED)
+                            ("disabled", MUTED)
                         };
                         ui.label(RichText::new(txt).small().color(c));
                     });
@@ -372,13 +442,27 @@ impl Boot {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         if is_run {
                             if let Some(name) = exe_name_from_cmd(&e.command) {
-                                let pids: Vec<u32> = procs.iter().filter(|p| p.name_lower == name).map(|p| p.pid).collect();
-                                if !pids.is_empty() && ui.small_button("Finalizar").clicked() {
+                                let pids: Vec<u32> = procs
+                                    .iter()
+                                    .filter(|p| p.name_lower == name)
+                                    .map(|p| p.pid)
+                                    .collect();
+                                if !pids.is_empty() && ui.small_button("Terminate").clicked() {
                                     kill = Some(pids);
                                 }
                             }
                         }
-                        if e.can_remove && ui.add(egui::Button::new(RichText::new("Remover").color(Color32::from_rgb(232, 120, 100))).small()).clicked() {
+                        if e.can_remove
+                            && ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Remove")
+                                            .color(Color32::from_rgb(232, 120, 100)),
+                                    )
+                                    .small(),
+                                )
+                                .clicked()
+                        {
                             remove = Some(e.clone());
                         }
                     });
@@ -397,8 +481,12 @@ impl Boot {
         }
         if let Some(e) = remove {
             confirm = Some(Pending {
-                title: format!("Remover {} da partida?", e.name),
-                lines: vec![e.origin.clone(), e.command.clone(), "O programa continua instalado. Só deixa de subir com o PC.".into()],
+                title: format!("Remove {} from startup?", e.name),
+                lines: vec![
+                    e.origin.clone(),
+                    e.command.clone(),
+                    "The program stays installed; it will simply stop starting with the PC.".into(),
+                ],
                 action: Action::Remove(e),
             });
         }
@@ -416,8 +504,16 @@ impl Boot {
         if self.pending.is_some() {
             let mut go = false;
             let mut cancel = false;
-            let title = self.pending.as_ref().map(|p| p.title.clone()).unwrap_or_default();
-            let lines = self.pending.as_ref().map(|p| p.lines.clone()).unwrap_or_default();
+            let title = self
+                .pending
+                .as_ref()
+                .map(|p| p.title.clone())
+                .unwrap_or_default();
+            let lines = self
+                .pending
+                .as_ref()
+                .map(|p| p.lines.clone())
+                .unwrap_or_default();
             egui::Modal::new(egui::Id::new("boot_confirm")).show(ui.ctx(), |ui| {
                 ui.set_width(520.0);
                 ui.heading(&title);
@@ -427,10 +523,16 @@ impl Boot {
                 }
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    if ui.add(egui::Button::new(RichText::new("Confirmar").strong()).fill(Color32::from_rgb(160, 60, 55))).clicked() {
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new("Confirm").strong())
+                                .fill(Color32::from_rgb(160, 60, 55)),
+                        )
+                        .clicked()
+                    {
                         go = true;
                     }
-                    if ui.button("Cancelar").clicked() {
+                    if ui.button("Cancel").clicked() {
                         cancel = true;
                     }
                 });
@@ -458,7 +560,9 @@ impl Boot {
                             ui.label(RichText::new(e.kind.label()).color(e.kind.color()).small());
                             ui.label(RichText::new(&e.origin).weak().small());
                         });
-                        ui.add(egui::Label::new(RichText::new(&e.command).monospace().small()).wrap());
+                        ui.add(
+                            egui::Label::new(RichText::new(&e.command).monospace().small()).wrap(),
+                        );
                     });
             }
         }
@@ -469,13 +573,24 @@ impl Boot {
     fn run(&mut self, action: Action, is_admin: bool, out: &mut Vec<BootOut>) {
         match action {
             Action::Toggle(e, enabled) => {
-                let label = format!("{}: {}", e.name, if enabled { "ativar" } else { "desativar" });
+                let label = format!("{}: {}", e.name, if enabled { "enable" } else { "disable" });
                 match apply_toggle(&e, enabled) {
                     Ok(()) => {
-                        out.push(BootOut::Toast(format!("{}: {}", e.name, if enabled { "ativa na partida" } else { "fora da partida" }), false));
+                        out.push(BootOut::Toast(
+                            format!(
+                                "{}: {}",
+                                e.name,
+                                if enabled {
+                                    "enabled at startup"
+                                } else {
+                                    "disabled at startup"
+                                }
+                            ),
+                            false,
+                        ));
                         self.last_refresh = None;
                     }
-                    Err(err) if e.machine && !is_admin && err.contains("acesso negado") => {
+                    Err(err) if e.machine && !is_admin && err.contains("access denied") => {
                         self.busy += 1;
                         sys::run_elevated_ps(label, toggle_ps(&e, enabled), self.tx.clone());
                     }
@@ -483,13 +598,16 @@ impl Boot {
                 }
             }
             Action::Remove(e) => {
-                let label = format!("{}: remover", e.name);
+                let label = format!("{}: remove", e.name);
                 match apply_remove(&e) {
                     Ok(()) => {
-                        out.push(BootOut::Toast(format!("{}: removido da partida", e.name), false));
+                        out.push(BootOut::Toast(
+                            format!("{}: removed from startup", e.name),
+                            false,
+                        ));
                         self.last_refresh = None;
                     }
-                    Err(err) if e.machine && !is_admin && err.contains("acesso negado") => {
+                    Err(err) if e.machine && !is_admin && err.contains("access denied") => {
                         self.busy += 1;
                         sys::run_elevated_ps(label, remove_ps(&e), self.tx.clone());
                     }
@@ -539,26 +657,87 @@ const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_ONCE: &str = r"Software\Microsoft\Windows\CurrentVersion\RunOnce";
 const RUN_WOW: &str = r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run";
 const RUN_ONCE_WOW: &str = r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce";
-const APPROVED_RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
-const APPROVED_RUN32: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32";
-const APPROVED_FOLDER: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
+const APPROVED_RUN: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+const APPROVED_RUN32: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32";
+const APPROVED_FOLDER: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
 const POLICIES_RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run";
 
 fn collect_run(out: &mut Vec<Entry>) {
     let sets = [
-        (HKEY_CURRENT_USER, RUN, APPROVED_RUN, false, false, "HKCU Run"),
-        (HKEY_LOCAL_MACHINE, RUN, APPROVED_RUN, true, false, "HKLM Run"),
-        (HKEY_LOCAL_MACHINE, RUN_WOW, APPROVED_RUN32, true, true, "HKLM Run (32-bit)"),
-        (HKEY_CURRENT_USER, RUN_ONCE, APPROVED_RUN, false, false, "HKCU RunOnce"),
-        (HKEY_LOCAL_MACHINE, RUN_ONCE, APPROVED_RUN, true, false, "HKLM RunOnce"),
-        (HKEY_LOCAL_MACHINE, RUN_ONCE_WOW, APPROVED_RUN32, true, true, "HKLM RunOnce (32-bit)"),
-        (HKEY_CURRENT_USER, POLICIES_RUN, APPROVED_RUN, false, false, "HKCU Policy Run"),
-        (HKEY_LOCAL_MACHINE, POLICIES_RUN, APPROVED_RUN, true, false, "HKLM Policy Run"),
+        (
+            HKEY_CURRENT_USER,
+            RUN,
+            APPROVED_RUN,
+            false,
+            false,
+            "HKCU Run",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            RUN,
+            APPROVED_RUN,
+            true,
+            false,
+            "HKLM Run",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            RUN_WOW,
+            APPROVED_RUN32,
+            true,
+            true,
+            "HKLM Run (32-bit)",
+        ),
+        (
+            HKEY_CURRENT_USER,
+            RUN_ONCE,
+            APPROVED_RUN,
+            false,
+            false,
+            "HKCU RunOnce",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            RUN_ONCE,
+            APPROVED_RUN,
+            true,
+            false,
+            "HKLM RunOnce",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            RUN_ONCE_WOW,
+            APPROVED_RUN32,
+            true,
+            true,
+            "HKLM RunOnce (32-bit)",
+        ),
+        (
+            HKEY_CURRENT_USER,
+            POLICIES_RUN,
+            APPROVED_RUN,
+            false,
+            false,
+            "HKCU Policy Run",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            POLICIES_RUN,
+            APPROVED_RUN,
+            true,
+            false,
+            "HKLM Policy Run",
+        ),
     ];
     for (root, run_path, approved_path, machine, wow64, origin) in sets {
         let once = run_path.contains("RunOnce");
         let approved = approved_map(root, approved_path);
-        let Some(k) = sys::reg_open(root, run_path, false) else { continue };
+        let Some(k) = sys::reg_open(root, run_path, false) else {
+            continue;
+        };
         let mut seen = HashSet::new();
         for (name, ty, data) in sys::reg_values(&k) {
             if ty != REG_SZ && ty != REG_EXPAND_SZ {
@@ -566,9 +745,16 @@ fn collect_run(out: &mut Vec<Entry>) {
             }
             seen.insert(name.to_lowercase());
             let command = sys::utf16_bytes_to_string(&data);
-            let enabled = approved.get(&name.to_lowercase()).map(|a| a.1).unwrap_or(true);
+            let enabled = approved
+                .get(&name.to_lowercase())
+                .map(|a| a.1)
+                .unwrap_or(true);
             out.push(Entry {
-                id: format!("run:{}:{}:{name}", if machine { "hklm" } else { "hkcu" }, if wow64 { "32" } else { "64" }),
+                id: format!(
+                    "run:{}:{}:{name}",
+                    if machine { "hklm" } else { "hkcu" },
+                    if wow64 { "32" } else { "64" }
+                ),
                 name: name.clone(),
                 command,
                 kind: Kind::Run,
@@ -579,7 +765,11 @@ fn collect_run(out: &mut Vec<Entry>) {
                 can_remove: true,
                 microsoft: is_microsoft_cmd(&name, ""),
                 origin: origin.to_string(),
-                target: Target::Run { machine, wow64, name },
+                target: Target::Run {
+                    machine,
+                    wow64,
+                    name,
+                },
                 running_hint: false,
             });
         }
@@ -591,7 +781,11 @@ fn collect_run(out: &mut Vec<Entry>) {
                 continue;
             }
             out.push(Entry {
-                id: format!("run-orphan:{}:{}:{key}", if machine { "hklm" } else { "hkcu" }, if wow64 { "32" } else { "64" }),
+                id: format!(
+                    "run-orphan:{}:{}:{key}",
+                    if machine { "hklm" } else { "hkcu" },
+                    if wow64 { "32" } else { "64" }
+                ),
                 name: orig.clone(),
                 command: String::new(),
                 kind: Kind::Run,
@@ -601,8 +795,12 @@ fn collect_run(out: &mut Vec<Entry>) {
                 can_toggle: false,
                 can_remove: true,
                 microsoft: false,
-                origin: format!("{origin} (órfã)"),
-                target: Target::Run { machine, wow64, name: orig.clone() },
+                origin: format!("{origin} (orphaned)"),
+                target: Target::Run {
+                    machine,
+                    wow64,
+                    name: orig.clone(),
+                },
                 running_hint: false,
             });
         }
@@ -610,8 +808,12 @@ fn collect_run(out: &mut Vec<Entry>) {
 }
 
 fn collect_folder(out: &mut Vec<Entry>) {
-    let user = std::env::var_os("APPDATA").map(PathBuf::from).map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\Startup"));
-    let common = std::env::var_os("ProgramData").map(PathBuf::from).map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\StartUp"));
+    let user = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\Startup"));
+    let common = std::env::var_os("ProgramData")
+        .map(PathBuf::from)
+        .map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\StartUp"));
     if let Some(p) = user {
         collect_one_folder(out, &p, false);
     }
@@ -621,7 +823,11 @@ fn collect_folder(out: &mut Vec<Entry>) {
 }
 
 fn collect_one_folder(out: &mut Vec<Entry>, dir: &Path, common: bool) {
-    let root = if common { HKEY_LOCAL_MACHINE } else { HKEY_CURRENT_USER };
+    let root = if common {
+        HKEY_LOCAL_MACHINE
+    } else {
+        HKEY_CURRENT_USER
+    };
     let approved = approved_map(root, APPROVED_FOLDER);
     let mut seen = HashSet::new();
     if let Ok(rd) = std::fs::read_dir(dir) {
@@ -632,10 +838,16 @@ fn collect_one_folder(out: &mut Vec<Entry>, dir: &Path, common: bool) {
                 continue;
             }
             seen.insert(file_name.to_lowercase());
-            let enabled = approved.get(&file_name.to_lowercase()).map(|a| a.1).unwrap_or(true);
+            let enabled = approved
+                .get(&file_name.to_lowercase())
+                .map(|a| a.1)
+                .unwrap_or(true);
             let command = resolve_startup_file(&path);
             out.push(Entry {
-                id: format!("folder:{}:{file_name}", if common { "common" } else { "user" }),
+                id: format!(
+                    "folder:{}:{file_name}",
+                    if common { "common" } else { "user" }
+                ),
                 name: file_name.clone(),
                 command,
                 kind: Kind::Folder,
@@ -645,8 +857,17 @@ fn collect_one_folder(out: &mut Vec<Entry>, dir: &Path, common: bool) {
                 can_toggle: true,
                 can_remove: true,
                 microsoft: false,
-                origin: if common { "pasta Iniciar (todos)" } else { "pasta Iniciar (usuário)" }.into(),
-                target: Target::Folder { common, file_name, path },
+                origin: if common {
+                    "startup folder (all users)"
+                } else {
+                    "startup folder (user)"
+                }
+                .into(),
+                target: Target::Folder {
+                    common,
+                    file_name,
+                    path,
+                },
                 running_hint: false,
             });
         }
@@ -656,7 +877,10 @@ fn collect_one_folder(out: &mut Vec<Entry>, dir: &Path, common: bool) {
             continue;
         }
         out.push(Entry {
-            id: format!("folder-orphan:{}:{key}", if common { "common" } else { "user" }),
+            id: format!(
+                "folder-orphan:{}:{key}",
+                if common { "common" } else { "user" }
+            ),
             name: orig.clone(),
             command: String::new(),
             kind: Kind::Folder,
@@ -666,8 +890,17 @@ fn collect_one_folder(out: &mut Vec<Entry>, dir: &Path, common: bool) {
             can_toggle: true,
             can_remove: true,
             microsoft: false,
-            origin: if common { "pasta Iniciar (órfã, todos)" } else { "pasta Iniciar (órfã)" }.into(),
-            target: Target::Folder { common, file_name: orig.clone(), path: dir.join(orig) },
+            origin: if common {
+                "startup folder (orphaned, all users)"
+            } else {
+                "startup folder (orphaned)"
+            }
+            .into(),
+            target: Target::Folder {
+                common,
+                file_name: orig.clone(),
+                path: dir.join(orig),
+            },
             running_hint: false,
         });
     }
@@ -675,12 +908,20 @@ fn collect_one_folder(out: &mut Vec<Entry>, dir: &Path, common: bool) {
 
 fn collect_tasks(out: &mut Vec<Entry>) {
     unsafe {
-        let Ok(svc) = CoCreateInstance::<Option<&IUnknown>, ITaskService>(&TaskScheduler, None, CLSCTX_INPROC_SERVER) else { return };
+        let Ok(svc) = CoCreateInstance::<Option<&IUnknown>, ITaskService>(
+            &TaskScheduler,
+            None,
+            CLSCTX_INPROC_SERVER,
+        ) else {
+            return;
+        };
         let empty = VARIANT::default();
         if svc.Connect(&empty, &empty, &empty, &empty).is_err() {
             return;
         }
-        let Ok(root) = svc.GetFolder(&BSTR::from("\\")) else { return };
+        let Ok(root) = svc.GetFolder(&BSTR::from("\\")) else {
+            return;
+        };
         walk_task_folder(&root, out);
     }
 }
@@ -748,7 +989,7 @@ fn task_entry(tasks: &IRegisteredTaskCollection, index: i32) -> Option<Entry> {
             can_toggle: true,
             can_remove: false,
             microsoft: path.starts_with(r"\Microsoft\"),
-            origin: format!("tarefa ({trigger}) {path}"),
+            origin: format!("task ({trigger}) {path}"),
             target: Target::Task { path },
             running_hint: false,
         })
@@ -760,20 +1001,50 @@ fn collect_services(out: &mut Vec<Entry>) {
     collect_scm(out, SERVICE_DRIVER, Kind::Driver);
 }
 
-fn collect_scm(out: &mut Vec<Entry>, ty: windows::Win32::System::Services::ENUM_SERVICE_TYPE, kind: Kind) {
+fn collect_scm(
+    out: &mut Vec<Entry>,
+    ty: windows::Win32::System::Services::ENUM_SERVICE_TYPE,
+    kind: Kind,
+) {
     unsafe {
-        let scm = match OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), SC_MANAGER_ENUMERATE_SERVICE | SC_MANAGER_CONNECT) {
+        let scm = match OpenSCManagerW(
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SC_MANAGER_ENUMERATE_SERVICE | SC_MANAGER_CONNECT,
+        ) {
             Ok(h) => Sc(h),
             Err(_) => return,
         };
         let mut needed = 0u32;
         let mut returned = 0u32;
-        let _ = EnumServicesStatusExW(scm.0, SC_ENUM_PROCESS_INFO, ty, SERVICE_STATE_ALL, None, &mut needed, &mut returned, None, PCWSTR::null());
+        let _ = EnumServicesStatusExW(
+            scm.0,
+            SC_ENUM_PROCESS_INFO,
+            ty,
+            SERVICE_STATE_ALL,
+            None,
+            &mut needed,
+            &mut returned,
+            None,
+            PCWSTR::null(),
+        );
         if needed == 0 {
             return;
         }
         let mut buf = vec![0u8; needed as usize];
-        if EnumServicesStatusExW(scm.0, SC_ENUM_PROCESS_INFO, ty, SERVICE_STATE_ALL, Some(&mut buf), &mut needed, &mut returned, None, PCWSTR::null()).is_err() {
+        if EnumServicesStatusExW(
+            scm.0,
+            SC_ENUM_PROCESS_INFO,
+            ty,
+            SERVICE_STATE_ALL,
+            Some(&mut buf),
+            &mut needed,
+            &mut returned,
+            None,
+            PCWSTR::null(),
+        )
+        .is_err()
+        {
             return;
         }
         let items = buf.as_ptr() as *const ENUM_SERVICE_STATUS_PROCESSW;
@@ -783,7 +1054,13 @@ fn collect_scm(out: &mut Vec<Entry>, ty: windows::Win32::System::Services::ENUM_
             let display = sys::from_wide(e.lpDisplayName.0);
             let running = e.ServiceStatusProcess.dwCurrentState == SERVICE_RUNNING;
             let w = sys::wide(&name);
-            let Ok(svc) = OpenServiceW(scm.0, PCWSTR(w.as_ptr()), SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS) else { continue };
+            let Ok(svc) = OpenServiceW(
+                scm.0,
+                PCWSTR(w.as_ptr()),
+                SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS,
+            ) else {
+                continue;
+            };
             let sh = Sc(svc);
             let mut need = 0u32;
             let _ = QueryServiceConfigW(sh.0, None, 0, &mut need);
@@ -797,7 +1074,9 @@ fn collect_scm(out: &mut Vec<Entry>, ty: windows::Win32::System::Services::ENUM_
             }
             let start = (*cfg).dwStartType;
             let delayed = start == SERVICE_AUTO_START && service_delayed(sh.0);
-            let bootish = start == SERVICE_AUTO_START || start == SERVICE_BOOT_START || start == SERVICE_SYSTEM_START;
+            let bootish = start == SERVICE_AUTO_START
+                || start == SERVICE_BOOT_START
+                || start == SERVICE_SYSTEM_START;
             if !bootish && start != SERVICE_DISABLED {
                 continue;
             }
@@ -812,19 +1091,23 @@ fn collect_scm(out: &mut Vec<Entry>, ty: windows::Win32::System::Services::ENUM_
             let enabled = start != SERVICE_DISABLED;
             let dangerous = start == SERVICE_BOOT_START || start == SERVICE_SYSTEM_START;
             let origin = if delayed {
-                "serviço automático (atrasado)".into()
+                "automatic service (delayed)".into()
             } else if start == SERVICE_BOOT_START {
-                "driver no boot".into()
+                "boot driver".into()
             } else if start == SERVICE_SYSTEM_START {
-                "driver no start do kernel".into()
+                "kernel-start driver".into()
             } else if start == SERVICE_DISABLED {
-                "serviço desativado".into()
+                "disabled service".into()
             } else {
-                "serviço automático".into()
+                "automatic service".into()
             };
             out.push(Entry {
                 id: format!("svc:{name}"),
-                name: if display.is_empty() { name.clone() } else { display },
+                name: if display.is_empty() {
+                    name.clone()
+                } else {
+                    display
+                },
                 command: bin.clone(),
                 kind,
                 machine: true,
@@ -849,7 +1132,14 @@ fn service_delayed(svc: SC_HANDLE) -> bool {
             return false;
         }
         let mut buf = vec![0u8; need.max(8) as usize];
-        if QueryServiceConfig2W(svc, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, Some(&mut buf), &mut need).is_err() {
+        if QueryServiceConfig2W(
+            svc,
+            SERVICE_CONFIG_DELAYED_AUTO_START_INFO,
+            Some(&mut buf),
+            &mut need,
+        )
+        .is_err()
+        {
             return false;
         }
         let info = buf.as_ptr() as *const SERVICE_DELAYED_AUTO_START_INFO;
@@ -859,10 +1149,14 @@ fn service_delayed(svc: SC_HANDLE) -> bool {
 
 fn collect_uwp(out: &mut Vec<Entry>) {
     let base = r"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData";
-    let Some(root) = sys::reg_open(HKEY_CURRENT_USER, base, false) else { return };
+    let Some(root) = sys::reg_open(HKEY_CURRENT_USER, base, false) else {
+        return;
+    };
     for pkg in sys::reg_subkeys(&root) {
         let st_path = format!("{base}\\{pkg}\\StartupTask");
-        let Some(st) = sys::reg_open(HKEY_CURRENT_USER, &st_path, false) else { continue };
+        let Some(st) = sys::reg_open(HKEY_CURRENT_USER, &st_path, false) else {
+            continue;
+        };
         for task in sys::reg_subkeys(&st) {
             let key = format!("{st_path}\\{task}");
             let state = sys::reg_dword(HKEY_CURRENT_USER, &key, "State").unwrap_or(0);
@@ -878,7 +1172,7 @@ fn collect_uwp(out: &mut Vec<Entry>) {
                 can_toggle: true,
                 can_remove: false,
                 microsoft: pkg.starts_with("Microsoft.") || pkg.starts_with("Windows."),
-                origin: "tarefa de app UWP".into(),
+                origin: "UWP app task".into(),
                 target: Target::Uwp { key },
                 running_hint: false,
             });
@@ -920,7 +1214,11 @@ fn collect_winlogon(out: &mut Vec<Entry>) {
 }
 
 fn collect_other(out: &mut Vec<Entry>) {
-    if let Some(k) = sys::reg_open(HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows", false) {
+    if let Some(k) = sys::reg_open(
+        HKEY_LOCAL_MACHINE,
+        r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows",
+        false,
+    ) {
         for (name, ty, data) in sys::reg_values(&k) {
             if name != "AppInit_DLLs" {
                 continue;
@@ -943,13 +1241,17 @@ fn collect_other(out: &mut Vec<Entry>) {
                 can_toggle: false,
                 can_remove: false,
                 microsoft: false,
-                origin: "DLLs injetadas em todo processo (AppInit)".into(),
+                origin: "DLLs injected into every process (AppInit)".into(),
                 target: Target::ReadOnly,
                 running_hint: false,
             });
         }
     }
-    if let Some(k) = sys::reg_open(HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager", false) {
+    if let Some(k) = sys::reg_open(
+        HKEY_LOCAL_MACHINE,
+        r"SYSTEM\CurrentControlSet\Control\Session Manager",
+        false,
+    ) {
         for (name, ty, data) in sys::reg_values(&k) {
             if name != "BootExecute" {
                 continue;
@@ -970,7 +1272,7 @@ fn collect_other(out: &mut Vec<Entry>) {
                 can_toggle: false,
                 can_remove: false,
                 microsoft: true,
-                origin: "Session Manager (antes do Winlogon)".into(),
+                origin: "Session Manager (before Winlogon)".into(),
                 target: Target::ReadOnly,
                 running_hint: false,
             });
@@ -980,7 +1282,9 @@ fn collect_other(out: &mut Vec<Entry>) {
     if let Some(root) = sys::reg_open(HKEY_LOCAL_MACHINE, as_path, false) {
         for guid in sys::reg_subkeys(&root) {
             let key = format!("{as_path}\\{guid}");
-            let Some(k) = sys::reg_open(HKEY_LOCAL_MACHINE, &key, false) else { continue };
+            let Some(k) = sys::reg_open(HKEY_LOCAL_MACHINE, &key, false) else {
+                continue;
+            };
             let mut stub = String::new();
             let mut label = guid.clone();
             for (name, ty, data) in sys::reg_values(&k) {
@@ -997,7 +1301,12 @@ fn collect_other(out: &mut Vec<Entry>) {
             if stub.is_empty() {
                 continue;
             }
-            let pending = sys::reg_open(HKEY_CURRENT_USER, &format!(r"SOFTWARE\Microsoft\Active Setup\Installed Components\{guid}"), false).is_none();
+            let pending = sys::reg_open(
+                HKEY_CURRENT_USER,
+                &format!(r"SOFTWARE\Microsoft\Active Setup\Installed Components\{guid}"),
+                false,
+            )
+            .is_none();
             out.push(Entry {
                 id: format!("activesetup:{guid}"),
                 name: label,
@@ -1009,7 +1318,12 @@ fn collect_other(out: &mut Vec<Entry>) {
                 can_toggle: false,
                 can_remove: false,
                 microsoft: true,
-                origin: if pending { "Active Setup (pendente neste usuário)" } else { "Active Setup (já rodou neste usuário)" }.into(),
+                origin: if pending {
+                    "Active Setup (pending for this user)"
+                } else {
+                    "Active Setup (already ran for this user)"
+                }
+                .into(),
                 target: Target::ReadOnly,
                 running_hint: false,
             });
@@ -1021,47 +1335,93 @@ fn collect_other(out: &mut Vec<Entry>) {
 
 fn apply_toggle(e: &Entry, enabled: bool) -> Result<(), String> {
     match &e.target {
-        Target::Run { machine, wow64, name } => {
-            let root = if *machine { HKEY_LOCAL_MACHINE } else { HKEY_CURRENT_USER };
+        Target::Run {
+            machine,
+            wow64,
+            name,
+        } => {
+            let root = if *machine {
+                HKEY_LOCAL_MACHINE
+            } else {
+                HKEY_CURRENT_USER
+            };
             let approved = if *wow64 { APPROVED_RUN32 } else { APPROVED_RUN };
             set_approved(root, approved, name, enabled)
         }
-        Target::Folder { common, file_name, .. } => {
-            let root = if *common { HKEY_LOCAL_MACHINE } else { HKEY_CURRENT_USER };
+        Target::Folder {
+            common, file_name, ..
+        } => {
+            let root = if *common {
+                HKEY_LOCAL_MACHINE
+            } else {
+                HKEY_CURRENT_USER
+            };
             set_approved(root, APPROVED_FOLDER, file_name, enabled)
         }
         Target::Task { path } => set_task_enabled(path, enabled),
-        Target::Service { name } => {
-            sys::set_start_type(name, if enabled { SvcStart::Auto } else { SvcStart::Disabled })
+        Target::Service { name } => sys::set_start_type(
+            name,
+            if enabled {
+                SvcStart::Auto
+            } else {
+                SvcStart::Disabled
+            },
+        ),
+        Target::Uwp { key } => {
+            sys::reg_set_dword(HKEY_CURRENT_USER, key, "State", if enabled { 1 } else { 2 })
         }
-        Target::Uwp { key } => sys::reg_set_dword(HKEY_CURRENT_USER, key, "State", if enabled { 1 } else { 2 }),
-        Target::ReadOnly => Err("esta entrada não pode ser alternada por aqui".into()),
+        Target::ReadOnly => Err("this entry cannot be toggled here".into()),
     }
 }
 
 fn apply_remove(e: &Entry) -> Result<(), String> {
     match &e.target {
-        Target::Run { machine, wow64, name } => {
-            let root = if *machine { HKEY_LOCAL_MACHINE } else { HKEY_CURRENT_USER };
+        Target::Run {
+            machine,
+            wow64,
+            name,
+        } => {
+            let root = if *machine {
+                HKEY_LOCAL_MACHINE
+            } else {
+                HKEY_CURRENT_USER
+            };
             let run = if *wow64 { RUN_WOW } else { RUN };
             let approved = if *wow64 { APPROVED_RUN32 } else { APPROVED_RUN };
             let r1 = sys::reg_delete_value(root, run, name);
             let _ = sys::reg_delete_value(root, approved, name);
-            if e.missing { Ok(()) } else { r1 }
+            if e.missing {
+                Ok(())
+            } else {
+                r1
+            }
         }
-        Target::Folder { path, common, file_name } => {
+        Target::Folder {
+            path,
+            common,
+            file_name,
+        } => {
             if path.exists() {
                 std::fs::remove_file(path).map_err(|e| e.to_string())?;
             }
-            let root = if *common { HKEY_LOCAL_MACHINE } else { HKEY_CURRENT_USER };
+            let root = if *common {
+                HKEY_LOCAL_MACHINE
+            } else {
+                HKEY_CURRENT_USER
+            };
             let _ = sys::reg_delete_value(root, APPROVED_FOLDER, file_name);
             Ok(())
         }
-        _ => Err("esta origem não se remove daqui — desative".into()),
+        _ => Err("this source cannot be removed here — disable it instead".into()),
     }
 }
 
-fn set_approved(root: windows::Win32::System::Registry::HKEY, path: &str, name: &str, enabled: bool) -> Result<(), String> {
+fn set_approved(
+    root: windows::Win32::System::Registry::HKEY,
+    path: &str,
+    name: &str,
+    enabled: bool,
+) -> Result<(), String> {
     let mut data = [0u8; 12];
     data[0] = if enabled { 2 } else { 3 };
     if !enabled {
@@ -1073,9 +1433,15 @@ fn set_approved(root: windows::Win32::System::Registry::HKEY, path: &str, name: 
 fn set_task_enabled(path: &str, enabled: bool) -> Result<(), String> {
     ensure_com();
     unsafe {
-        let svc: ITaskService = CoCreateInstance::<Option<&IUnknown>, ITaskService>(&TaskScheduler, None, CLSCTX_INPROC_SERVER).map_err(|e| e.message())?;
+        let svc: ITaskService = CoCreateInstance::<Option<&IUnknown>, ITaskService>(
+            &TaskScheduler,
+            None,
+            CLSCTX_INPROC_SERVER,
+        )
+        .map_err(|e| e.message())?;
         let empty = VARIANT::default();
-        svc.Connect(&empty, &empty, &empty, &empty).map_err(|e| e.message())?;
+        svc.Connect(&empty, &empty, &empty, &empty)
+            .map_err(|e| e.message())?;
         let folder = svc.GetFolder(&BSTR::from("\\")).map_err(|e| e.message())?;
         let task = folder.GetTask(&BSTR::from(path)).map_err(|e| e.message())?;
         let flag = if enabled {
@@ -1091,14 +1457,22 @@ fn toggle_ps(e: &Entry, enabled: bool) -> String {
     match &e.target {
         Target::Run { wow64, name, .. } => {
             let key = if *wow64 { APPROVED_RUN32 } else { APPROVED_RUN };
-            let bytes = if enabled { "2,0,0,0,0,0,0,0,0,0,0,0" } else { "3,0,0,0,0,0,0,0,0,0,0,0" };
+            let bytes = if enabled {
+                "2,0,0,0,0,0,0,0,0,0,0,0"
+            } else {
+                "3,0,0,0,0,0,0,0,0,0,0,0"
+            };
             format!(
                 "Set-ItemProperty -Path 'HKLM:\\{key}' -Name {} -Value ([byte[]]({bytes}))",
                 sys::ps_quote(name)
             )
         }
         Target::Folder { file_name, .. } => {
-            let bytes = if enabled { "2,0,0,0,0,0,0,0,0,0,0,0" } else { "3,0,0,0,0,0,0,0,0,0,0,0" };
+            let bytes = if enabled {
+                "2,0,0,0,0,0,0,0,0,0,0,0"
+            } else {
+                "3,0,0,0,0,0,0,0,0,0,0,0"
+            };
             format!(
                 "Set-ItemProperty -Path 'HKLM:\\{APPROVED_FOLDER}' -Name {} -Value ([byte[]]({bytes}))",
                 sys::ps_quote(file_name)
@@ -1110,7 +1484,10 @@ fn toggle_ps(e: &Entry, enabled: bool) -> String {
         }
         Target::Service { name } => {
             let ty = if enabled { "Automatic" } else { "Disabled" };
-            format!("Set-Service -Name {} -StartupType {ty}", sys::ps_quote(name))
+            format!(
+                "Set-Service -Name {} -StartupType {ty}",
+                sys::ps_quote(name)
+            )
         }
         _ => String::new(),
     }
@@ -1126,7 +1503,9 @@ fn remove_ps(e: &Entry) -> String {
                 sys::ps_quote(name)
             )
         }
-        Target::Folder { path, file_name, .. } => {
+        Target::Folder {
+            path, file_name, ..
+        } => {
             format!(
                 "Remove-Item -LiteralPath {} -Force -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKLM:\\{APPROVED_FOLDER}' -Name {} -ErrorAction SilentlyContinue",
                 sys::ps_quote(&path.to_string_lossy()),
@@ -1139,7 +1518,10 @@ fn remove_ps(e: &Entry) -> String {
 
 // ---------- helpers ----------
 
-fn approved_map(root: windows::Win32::System::Registry::HKEY, path: &str) -> HashMap<String, (String, bool)> {
+fn approved_map(
+    root: windows::Win32::System::Registry::HKEY,
+    path: &str,
+) -> HashMap<String, (String, bool)> {
     sys::reg_open(root, path, false)
         .map(|k| {
             sys::reg_values(&k)
@@ -1155,7 +1537,11 @@ fn approved_map(root: windows::Win32::System::Registry::HKEY, path: &str) -> Has
 }
 
 fn resolve_startup_file(path: &Path) -> String {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     if ext == "lnk" {
         if let Some(s) = resolve_lnk(path) {
             return s;
@@ -1167,7 +1553,12 @@ fn resolve_startup_file(path: &Path) -> String {
 fn resolve_lnk(path: &Path) -> Option<String> {
     ensure_com();
     unsafe {
-        let link: IShellLinkW = CoCreateInstance::<Option<&IUnknown>, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+        let link: IShellLinkW = CoCreateInstance::<Option<&IUnknown>, IShellLinkW>(
+            &ShellLink,
+            None,
+            CLSCTX_INPROC_SERVER,
+        )
+        .ok()?;
         let persist: IPersistFile = link.cast().ok()?;
         let w = sys::wide(&path.to_string_lossy());
         persist.Load(PCWSTR(w.as_ptr()), STGM_READ).ok()?;
@@ -1212,7 +1603,11 @@ fn xml_tag(xml: &str, tag: &str) -> Option<String> {
     let start = xml.find(&open)? + open.len();
     let end = xml[start..].find(&close)? + start;
     let s = xml[start..end].trim();
-    if s.is_empty() { None } else { Some(s.to_string()) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
 }
 
 fn path_is_user_task(path: &str) -> bool {
@@ -1252,7 +1647,9 @@ fn running_exes(procs: &[ProcInfo]) -> HashSet<String> {
 }
 
 fn exe_running(cmd: &str, running: &HashSet<String>) -> bool {
-    exe_name_from_cmd(cmd).map(|n| running.contains(&n)).unwrap_or(false)
+    exe_name_from_cmd(cmd)
+        .map(|n| running.contains(&n))
+        .unwrap_or(false)
 }
 
 struct Sc(SC_HANDLE);

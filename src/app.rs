@@ -7,9 +7,9 @@ use std::time::Instant;
 use egui::{Align, Color32, Layout, Rect, RichText, Stroke, StrokeKind, TextureHandle, Vec2};
 use egui_extras::{Column, TableBuilder, TableRow};
 
+use crate::boot::{Boot, BootOut};
 use crate::categories::{self, classify, is_critical, Category};
 use crate::config::{Config, MemMetric, ViewMode};
-use crate::boot::{Boot, BootOut};
 use crate::drains::{DrainOut, Drains};
 use crate::hwtemp::HwTemp;
 use crate::knowledge;
@@ -44,7 +44,6 @@ pub const MINI_H: f32 = 166.0;
 /// exatamente o mesmo limite que `main` aplica na abertura.
 pub const FULL_MIN_W: f32 = 760.0;
 pub const FULL_MIN_H: f32 = 420.0;
-
 
 /// Temperatura de um bloco de medidor. `Missing` existe porque "sem sensor" e "este
 /// medidor não tem temperatura" são coisas diferentes: a CPU sem admin tem que mostrar um
@@ -86,10 +85,7 @@ enum Row {
     },
     /// Linha sintética: memória em uso que não pertence a processo nenhum.
     /// Sem PID, sem kill — existe para a soma da lista bater com o "em uso" do topo.
-    System {
-        kind: SysRow,
-        bytes: u64,
-    },
+    System { kind: SysRow, bytes: u64 },
 }
 
 /// As parcelas do "em uso" que nunca aparecem numa lista de processos.
@@ -103,30 +99,30 @@ enum SysRow {
 impl SysRow {
     fn label(self) -> &'static str {
         match self {
-            SysRow::PagedPool => "Kernel — pool paginado",
-            SysRow::NonPagedPool => "Kernel — pool não-paginado",
-            SysRow::SharedAndCache => "Compartilhado, cache e tabelas",
+            SysRow::PagedPool => "Kernel — paged pool",
+            SysRow::NonPagedPool => "Kernel — nonpaged pool",
+            SysRow::SharedAndCache => "Shared, cache & tables",
         }
     }
 
     fn tip(self) -> &'static str {
         match self {
             SysRow::PagedPool => concat!(
-                "Memória do kernel e dos drivers que pode ser paginada ao disco.\n\n",
-                "Não pertence a processo nenhum, por isso nunca aparece no Gerenciador de ",
-                "Tarefas. Acima de ~2 GB costuma indicar vazamento de driver."
+                "Kernel and driver memory that can be paged to disk.\n\n",
+                "It does not belong to any process, so it never appears in Task Manager.\n",
+                "Above ~2 GB often indicates a driver leak."
             ),
             SysRow::NonPagedPool => concat!(
-                "Memória do kernel que nunca sai da RAM física — filas de I/O, estruturas de ",
-                "driver, buffers de rede.\n\nSempre residente, sempre invisível na lista de processos."
+                "Kernel memory that never leaves physical RAM — I/O queues, driver structures, ",
+                "and network buffers.\n\nAlways resident, always invisible in the process list."
             ),
             SysRow::SharedAndCache => concat!(
-                "O que sobra do \"em uso\" depois de descontar a memória privada dos processos ",
-                "e os dois pools do kernel.\n\n",
-                "É sobretudo memória compartilhada residente (DLLs e seções mapeadas em vários ",
-                "processos, contadas uma vez só aqui), mais cache de arquivos residente, tabelas ",
-                "de página e páginas travadas por driver de GPU.\n\n",
-                "Calculado por diferença — é um resto, não uma medição direta."
+                "What remains of \"in use\" after subtracting process-private memory and the two ",
+                "kernel pools.\n\n",
+                "Mostly resident shared memory (DLLs and sections mapped into multiple processes, ",
+                "counted only once here), plus resident file cache, page tables, and GPU driver-locked ",
+                "pages.\n\n",
+                "Calculated by difference — a remainder, not a direct measurement."
             ),
         }
     }
@@ -315,7 +311,11 @@ impl App {
         self.sample_ms = snap.sample_ms;
         // Primeira amostra de GetSystemTimes não tem delta — guarda o % anterior
         // pra o medidor não piscar "–" no primeiro tick.
-        let cpu_keep = if snap.sys.cpu_pct.is_none() { self.sys.cpu_pct } else { None };
+        let cpu_keep = if snap.sys.cpu_pct.is_none() {
+            self.sys.cpu_pct
+        } else {
+            None
+        };
         self.sys = snap.sys;
         if let Some(p) = cpu_keep {
             self.sys.cpu_pct = Some(p);
@@ -325,7 +325,9 @@ impl App {
         // Nome de cada PID guardado enquanto ele existe: é o que permite dizer
         // "smss.exe (1208), já encerrado" em vez do número solto quando o pai morre.
         for p in &self.procs {
-            self.seen_names.entry(p.pid).or_insert_with(|| p.name.clone());
+            self.seen_names
+                .entry(p.pid)
+                .or_insert_with(|| p.name.clone());
         }
         self.refresh_services();
         self.rebuild_indexes();
@@ -337,14 +339,24 @@ impl App {
     }
 
     fn rebuild_indexes(&mut self) {
-        self.by_pid = self.procs.iter().enumerate().map(|(i, p)| (p.pid, i)).collect();
+        self.by_pid = self
+            .procs
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.pid, i))
+            .collect();
         self.children.clear();
         for p in &self.procs {
             if p.ppid != 0 {
                 self.children.entry(p.ppid).or_default().push(p.pid);
             }
         }
-        let overrides: HashMap<String, Category> = self.cfg.overrides.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        let overrides: HashMap<String, Category> = self
+            .cfg
+            .overrides
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
         self.cats = classify(&self.procs, &overrides);
         // soma de subárvore (memo por DFS)
         self.subtree.clear();
@@ -360,7 +372,11 @@ impl App {
             return (t, c);
         }
         let m = self.cfg.mem_metric;
-        let own = self.by_pid.get(&pid).map(|&i| Self::metric_of(m, &self.procs[i])).unwrap_or(0);
+        let own = self
+            .by_pid
+            .get(&pid)
+            .map(|&i| Self::metric_of(m, &self.procs[i]))
+            .unwrap_or(0);
         let mut total = own;
         let mut count = 1usize;
         if depth < 128 {
@@ -390,7 +406,10 @@ impl App {
     fn refresh_services(&mut self) {
         #[cfg(windows)]
         {
-            let due = self.services_at.map(|t| t.elapsed().as_secs() >= 10).unwrap_or(true);
+            let due = self
+                .services_at
+                .map(|t| t.elapsed().as_secs() >= 10)
+                .unwrap_or(true);
             if due {
                 self.services = crate::sys::services_by_pid();
                 self.services_at = Some(Instant::now());
@@ -412,7 +431,10 @@ impl App {
     /// `None` = ainda verificando.
     fn signature_of(&mut self, path: &str, ctx: &egui::Context) -> Option<SigInfo> {
         if path.is_empty() {
-            return Some(SigInfo { trust: signature::Trust::Unknown("sem acesso ao caminho".into()), signer: String::new() });
+            return Some(SigInfo {
+                trust: signature::Trust::Unknown("path unavailable".into()),
+                signer: String::new(),
+            });
         }
         let key = path.to_lowercase();
         if let Some(s) = self.sigs.get(&key) {
@@ -484,7 +506,9 @@ impl App {
     }
 
     fn is_locked(&self, p: &ProcInfo) -> bool {
-        is_critical(&p.name_lower, p.pid) || self.cfg.locked.contains(&p.name_lower) || p.pid == std::process::id()
+        is_critical(&p.name_lower, p.pid)
+            || self.cfg.locked.contains(&p.name_lower)
+            || p.pid == std::process::id()
     }
 
     fn passes(&self, p: &ProcInfo, search: &str) -> bool {
@@ -540,9 +564,12 @@ impl App {
             chain.push(format!("{} ({})", a.name, a.pid));
             if !categories::is_generic_host(&a.name_lower) {
                 let tip = if chain.len() > 1 {
-                    format!("{}\nclique para selecionar", chain.iter().rev().cloned().collect::<Vec<_>>().join(" › "))
+                    format!(
+                        "{}\nclick to select",
+                        chain.iter().rev().cloned().collect::<Vec<_>>().join(" › ")
+                    )
                 } else {
-                    format!("PID {} — clique para selecionar o pai", a.pid)
+                    format!("PID {} — click to select parent", a.pid)
                 };
                 return (a.name.clone(), Some(a.pid), tip, false);
             }
@@ -551,27 +578,45 @@ impl App {
         // Cadeia só de hosts genéricos ou interrompida: usa o ambiente herdado.
         let l = &p.launcher;
         if !l.short().is_empty() {
-            let mut tip = String::from("Deduzido das variáveis de ambiente herdadas");
+            let mut tip = String::from("Inferred from inherited environment variables");
             if let Some(sid) = &l.session {
-                tip.push_str(&format!(" · sessão {sid}"));
+                tip.push_str(&format!(" · session {sid}"));
             }
             if let Some(apid) = l.agent_pid.filter(|x| self.proc(*x).is_some()) {
                 let an = self.proc(apid).map(|a| a.name.clone()).unwrap_or_default();
-                tip.push_str(&format!("\n{an} (PID {apid}) — clique para selecionar"));
-                return (format!("{} · {an}", l.agent.clone().unwrap_or_default()), Some(apid), tip, true);
+                tip.push_str(&format!("\n{an} (PID {apid}) — click to select"));
+                return (
+                    format!("{} · {an}", l.agent.clone().unwrap_or_default()),
+                    Some(apid),
+                    tip,
+                    true,
+                );
             }
             if !chain.is_empty() {
-                tip.push_str(&format!("\ncadeia: {}", chain.iter().rev().cloned().collect::<Vec<_>>().join(" › ")));
+                tip.push_str(&format!(
+                    "\nchain: {}",
+                    chain.iter().rev().cloned().collect::<Vec<_>>().join(" › ")
+                ));
             } else if p.raw_ppid != 0 {
-                tip.push_str(&format!("\npai (PID {}) já encerrado", p.raw_ppid));
+                tip.push_str(&format!("\nparent (PID {}) already exited", p.raw_ppid));
             }
             return (l.short(), None, tip, true);
         }
         if let Some(pp) = self.proc(p.ppid) {
-            return (pp.name.clone(), Some(pp.pid), format!("PID {} — clique para selecionar o pai", pp.pid), false);
+            return (
+                pp.name.clone(),
+                Some(pp.pid),
+                format!("PID {} — click to select parent", pp.pid),
+                false,
+            );
         }
         if p.raw_ppid != 0 {
-            (format!("(pid {} encerrado)", p.raw_ppid), None, String::new(), false)
+            (
+                format!("(pid {} exited)", p.raw_ppid),
+                None,
+                String::new(),
+                false,
+            )
         } else {
             ("–".into(), None, String::new(), false)
         }
@@ -602,24 +647,49 @@ impl App {
                 SortKey::Name => pa.name_lower.cmp(&pb.name_lower).then(pa.pid.cmp(&pb.pid)),
                 SortKey::Ram => {
                     if tree {
-                        self.subtree.get(a).unwrap_or(&0).cmp(self.subtree.get(b).unwrap_or(&0))
+                        self.subtree
+                            .get(a)
+                            .unwrap_or(&0)
+                            .cmp(self.subtree.get(b).unwrap_or(&0))
                     } else {
                         self.mem_of(pa).cmp(&self.mem_of(pb))
                     }
                 }
-                SortKey::Cat => self.cat(*a).cmp(&self.cat(*b)).then(self.mem_of(pb).cmp(&self.mem_of(pa))),
+                SortKey::Cat => self
+                    .cat(*a)
+                    .cmp(&self.cat(*b))
+                    .then(self.mem_of(pb).cmp(&self.mem_of(pa))),
                 SortKey::Pid => pa.pid.cmp(&pb.pid),
-                SortKey::Cpu => pa.cpu_pct.partial_cmp(&pb.cpu_pct).unwrap_or(std::cmp::Ordering::Equal),
-                SortKey::Gpu => pa.gpu_pct.partial_cmp(&pb.gpu_pct).unwrap_or(std::cmp::Ordering::Equal),
-                SortKey::Disk => pa.disk_bps.partial_cmp(&pb.disk_bps).unwrap_or(std::cmp::Ordering::Equal),
+                SortKey::Cpu => pa
+                    .cpu_pct
+                    .partial_cmp(&pb.cpu_pct)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                SortKey::Gpu => pa
+                    .gpu_pct
+                    .partial_cmp(&pb.gpu_pct)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                SortKey::Disk => pa
+                    .disk_bps
+                    .partial_cmp(&pb.disk_bps)
+                    .unwrap_or(std::cmp::Ordering::Equal),
                 SortKey::Age => pb.create_time.cmp(&pa.create_time),
                 SortKey::Parent => {
-                    let na = self.proc(pa.ppid).map(|p| p.name_lower.as_str()).unwrap_or("");
-                    let nb = self.proc(pb.ppid).map(|p| p.name_lower.as_str()).unwrap_or("");
+                    let na = self
+                        .proc(pa.ppid)
+                        .map(|p| p.name_lower.as_str())
+                        .unwrap_or("");
+                    let nb = self
+                        .proc(pb.ppid)
+                        .map(|p| p.name_lower.as_str())
+                        .unwrap_or("");
                     na.cmp(nb).then(self.mem_of(pb).cmp(&self.mem_of(pa)))
                 }
             };
-            if desc { ord.reverse() } else { ord }
+            if desc {
+                ord.reverse()
+            } else {
+                ord
+            }
         });
     }
 
@@ -628,7 +698,10 @@ impl App {
     /// Só aparecem sem busca e sem filtro de categoria — buscar "chrome" não pode devolver
     /// o pool do kernel. Ordenadas por tamanho, junto do resto.
     fn system_rows(&self, search: &str) -> Vec<Row> {
-        if !self.cfg.show_kernel_rows || !search.is_empty() || self.cat_enabled.len() != Category::ALL.len() {
+        if !self.cfg.show_kernel_rows
+            || !search.is_empty()
+            || self.cat_enabled.len() != Category::ALL.len()
+        {
             return Vec::new();
         }
         let b = self.breakdown();
@@ -645,12 +718,19 @@ impl App {
         ];
         out.retain(|(_, bytes)| *bytes > 0);
         out.sort_by_key(|(_, bytes)| std::cmp::Reverse(*bytes));
-        out.into_iter().map(|(kind, bytes)| Row::System { kind, bytes }).collect()
+        out.into_iter()
+            .map(|(kind, bytes)| Row::System { kind, bytes })
+            .collect()
     }
 
     fn build_rows(&self) -> Vec<Row> {
         let search = self.search.trim().to_lowercase();
-        let hits: Vec<u32> = self.procs.iter().filter(|p| self.passes(p, &search)).map(|p| p.pid).collect();
+        let hits: Vec<u32> = self
+            .procs
+            .iter()
+            .filter(|p| self.passes(p, &search))
+            .map(|p| p.pid)
+            .collect();
         let sys_rows = self.system_rows(&search);
         match self.cfg.view {
             // Thermal não tem tabela de processos — o braço só existe pra exaustividade.
@@ -659,11 +739,18 @@ impl App {
                 self.sort_pids(&mut pids, false);
                 // Ralos e Térmico não desenham esta tabela; nas outras as linhas de sistema
                 // ficam no topo, onde o usuário procura "quem está comendo a RAM".
-                let mut rows = if self.cfg.view == ViewMode::List { sys_rows } else { Vec::new() };
-                rows.extend(
-                    pids.into_iter()
-                        .map(|pid| Row::Proc { pid, depth: 0, has_children: false, expanded: false, dim: false }),
-                );
+                let mut rows = if self.cfg.view == ViewMode::List {
+                    sys_rows
+                } else {
+                    Vec::new()
+                };
+                rows.extend(pids.into_iter().map(|pid| Row::Proc {
+                    pid,
+                    depth: 0,
+                    has_children: false,
+                    expanded: false,
+                    dim: false,
+                }));
                 rows
             }
             ViewMode::Category => {
@@ -674,7 +761,10 @@ impl App {
                 let mut cats: Vec<(Category, u64, Vec<u32>)> = groups
                     .into_iter()
                     .map(|(c, pids)| {
-                        let total = pids.iter().map(|p| self.proc(*p).map(|x| self.mem_of(x)).unwrap_or(0)).sum();
+                        let total = pids
+                            .iter()
+                            .map(|p| self.proc(*p).map(|x| self.mem_of(x)).unwrap_or(0))
+                            .sum();
                         (c, total, pids)
                     })
                     .collect();
@@ -682,11 +772,22 @@ impl App {
                 let mut rows = Vec::new();
                 for (cat, total, mut pids) in cats {
                     let collapsed = self.collapsed_cats.contains(&cat);
-                    rows.push(Row::CatHeader { cat, count: pids.len(), total, collapsed });
+                    rows.push(Row::CatHeader {
+                        cat,
+                        count: pids.len(),
+                        total,
+                        collapsed,
+                    });
                     if !collapsed {
                         self.sort_pids(&mut pids, false);
                         for pid in pids {
-                            rows.push(Row::Proc { pid, depth: 1, has_children: false, expanded: false, dim: false });
+                            rows.push(Row::Proc {
+                                pid,
+                                depth: 1,
+                                has_children: false,
+                                expanded: false,
+                                dim: false,
+                            });
                         }
                     }
                 }
@@ -724,8 +825,15 @@ impl App {
                         .unwrap_or_default();
                     let has_children = !kids.is_empty();
                     let expanded = has_children
-                        && (self.expanded.contains(&pid) || (filtering && auto_expand.contains(&pid)));
-                    rows.push(Row::Proc { pid, depth, has_children, expanded, dim: filtering && !hitset.contains(&pid) });
+                        && (self.expanded.contains(&pid)
+                            || (filtering && auto_expand.contains(&pid)));
+                    rows.push(Row::Proc {
+                        pid,
+                        depth,
+                        has_children,
+                        expanded,
+                        dim: filtering && !hitset.contains(&pid),
+                    });
                     if expanded && depth < 60 {
                         self.sort_pids(&mut kids, true);
                         for k in kids.into_iter().rev() {
@@ -765,12 +873,18 @@ impl App {
             _ => false,
         };
         let key = self.rows_key();
-        let can_freeze = hovering && !self.rows_dirty && key == self.cached_key && self.pending.is_none();
+        let can_freeze =
+            hovering && !self.rows_dirty && key == self.cached_key && self.pending.is_none();
         if can_freeze {
             if self.cached_rows.is_some() {
                 // mantém a ordem; remove só o que morreu ou deixou de passar no filtro
                 let search = self.search.trim().to_lowercase();
-                let mut keep: HashSet<u32> = self.procs.iter().filter(|p| self.passes(p, &search)).map(|p| p.pid).collect();
+                let mut keep: HashSet<u32> = self
+                    .procs
+                    .iter()
+                    .filter(|p| self.passes(p, &search))
+                    .map(|p| p.pid)
+                    .collect();
                 if self.cfg.view == ViewMode::Tree {
                     let hits: Vec<u32> = keep.iter().copied().collect();
                     for h in hits {
@@ -799,11 +913,13 @@ impl App {
     // ---------- ações ----------
 
     fn request_kill(&mut self, pid: u32, tree: bool) {
-        let Some(p) = self.proc(pid).cloned() else { return };
+        let Some(p) = self.proc(pid).cloned() else {
+            return;
+        };
         let mut pids = vec![];
         let mut skipped_locked = 0;
         if self.is_locked(&p) {
-            self.toast(format!("{} está protegido (lock)", p.name), true);
+            self.toast(format!("{} is protected (lock)", p.name), true);
             return;
         }
         pids.push((p.pid, p.name.clone(), self.mem_of(&p)));
@@ -821,15 +937,24 @@ impl App {
         let total: u64 = pids.iter().map(|x| x.2).sum();
         let title = if tree {
             format!(
-                "Finalizar árvore de {} (PID {}): {} processo(s), {}{}",
+                "Terminate tree of {} (PID {}): {} process(es), {}{}",
                 p.name,
                 p.pid,
                 pids.len(),
                 fmt_bytes(total),
-                if skipped_locked > 0 { format!(" — {skipped_locked} protegido(s) serão poupados") } else { String::new() }
+                if skipped_locked > 0 {
+                    format!(" — {skipped_locked} protected process(es) will be skipped")
+                } else {
+                    String::new()
+                }
             )
         } else {
-            format!("Finalizar {} (PID {}, {})?", p.name, p.pid, fmt_bytes(self.mem_of(&p)))
+            format!(
+                "Terminate {} (PID {}, {})?",
+                p.name,
+                p.pid,
+                fmt_bytes(self.mem_of(&p))
+            )
         };
         let req = KillReq { pids, title, tree };
         if self.cfg.confirm_kill {
@@ -855,11 +980,11 @@ impl App {
         self.sampler.force.store(true, Ordering::Relaxed);
         if errs.is_empty() {
             self.toast(
-                format!("{} processo(s) finalizado(s), ~{} liberados", ok, fmt_bytes(freed)),
+                format!("{} process(es) terminated, ~{} freed", ok, fmt_bytes(freed)),
                 false,
             );
         } else {
-            let mut msg = format!("{ok} ok, {} falha(s): {}", errs.len(), errs[0]);
+            let mut msg = format!("{ok} succeeded, {} failure(s): {}", errs.len(), errs[0]);
             if errs.len() > 1 {
                 msg.push_str(&format!(" (+{})", errs.len() - 1));
             }
@@ -901,18 +1026,33 @@ impl App {
             use windows::core::{w, PCWSTR};
             use windows::Win32::UI::Shell::ShellExecuteW;
             use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-            let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+            let exe = std::env::current_exe()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
             let wide: Vec<u16> = exe.encode_utf16().chain(std::iter::once(0)).collect();
-            let r = unsafe { ShellExecuteW(None, w!("runas"), PCWSTR(wide.as_ptr()), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL) };
+            let r = unsafe {
+                ShellExecuteW(
+                    None,
+                    w!("runas"),
+                    PCWSTR(wide.as_ptr()),
+                    PCWSTR::null(),
+                    PCWSTR::null(),
+                    SW_SHOWNORMAL,
+                )
+            };
             if r.0 as usize > 32 {
                 std::process::exit(0);
             } else {
-                self.toast("Elevação cancelada ou falhou".into(), true);
+                self.toast("Elevation canceled or failed".into(), true);
             }
         }
         #[cfg(not(windows))]
         {
-            self.toast("No macOS, rode o RamDog com sudo se precisar matar processos de outros usuários.".into(), true);
+            self.toast(
+                "On macOS, run RamDog with sudo to terminate processes owned by other users."
+                    .into(),
+                true,
+            );
         }
     }
 
@@ -951,7 +1091,8 @@ impl App {
         let b = self.breakdown();
         let total = self.mem.total_phys.max(1);
         let cats = self.cat_totals_with(MemMetric::Private);
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, TOP_BAR_H), egui::Sense::hover());
+        let (rect, resp) =
+            ui.allocate_exact_size(Vec2::new(width, TOP_BAR_H), egui::Sense::hover());
         let p = ui.painter();
         p.rect_filled(rect, 3.0, Color32::from_rgb(30, 34, 41));
         let scale = rect.width() / total as f32;
@@ -968,7 +1109,10 @@ impl App {
                 return;
             }
             let right = (*x + w).min(rect.right());
-            let seg = Rect::from_min_max(egui::pos2(*x, rect.top() + 1.0), egui::pos2(right, rect.bottom() - 1.0));
+            let seg = Rect::from_min_max(
+                egui::pos2(*x, rect.top() + 1.0),
+                egui::pos2(right, rect.bottom() - 1.0),
+            );
             p.rect_filled(seg, 0.0, color);
             *x = right;
         };
@@ -982,7 +1126,7 @@ impl App {
         // O compromisso saía numa linha extra embaixo da barra — era a única linha que só a
         // RAM tinha, e era ela que desalinhava a fileira inteira dos medidores. Vive aqui.
         let mut tip = format!(
-            "{} em uso de {}\ncompromisso {} / {} (RAM + arquivo de paginação)\n",
+            "{} in use of {}\ncommit {} / {} (RAM + paging file)\n",
             fmt_gb(b.used),
             fmt_gb(total),
             fmt_gb(self.mem.used_commit()),
@@ -991,14 +1135,29 @@ impl App {
         for (c, t) in &segs {
             tip.push_str(&format!("\n{}  {}", c.label(), fmt_bytes_short(*t)));
         }
-        tip.push_str(&format!("\n\nProcessos (privado)  {}", fmt_bytes_short(b.private)));
+        tip.push_str(&format!(
+            "\n\nProcesses (private)  {}",
+            fmt_bytes_short(b.private)
+        ));
         if b.kernel_ok {
-            tip.push_str(&format!("\n{}  {}", SysRow::PagedPool.label(), fmt_bytes_short(b.paged_pool)));
-            tip.push_str(&format!("\n{}  {}", SysRow::NonPagedPool.label(), fmt_bytes_short(b.nonpaged_pool)));
+            tip.push_str(&format!(
+                "\n{}  {}",
+                SysRow::PagedPool.label(),
+                fmt_bytes_short(b.paged_pool)
+            ));
+            tip.push_str(&format!(
+                "\n{}  {}",
+                SysRow::NonPagedPool.label(),
+                fmt_bytes_short(b.nonpaged_pool)
+            ));
         }
-        tip.push_str(&format!("\n{}  {}", SysRow::SharedAndCache.label(), fmt_bytes_short(b.shared_and_cache)));
+        tip.push_str(&format!(
+            "\n{}  {}",
+            SysRow::SharedAndCache.label(),
+            fmt_bytes_short(b.shared_and_cache)
+        ));
         if !self.hwtemp.dimm_temps.is_empty() {
-            tip.push_str("\n\nTemperatura por pente:");
+            tip.push_str("\n\nTemperature by DIMM:");
             for (i, t) in self.hwtemp.dimm_temps.iter().enumerate() {
                 tip.push_str(&format!("\nDIMM #{i}  {t:.1}°C"));
             }
@@ -1040,14 +1199,21 @@ impl App {
         }
     }
 
-    fn meter_bar(ui: &mut egui::Ui, width: f32, pct: Option<f32>, tip: impl Into<egui::WidgetText>) -> egui::Response {
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, TOP_BAR_H), egui::Sense::hover());
+    fn meter_bar(
+        ui: &mut egui::Ui,
+        width: f32,
+        pct: Option<f32>,
+        tip: impl Into<egui::WidgetText>,
+    ) -> egui::Response {
+        let (rect, resp) =
+            ui.allocate_exact_size(Vec2::new(width, TOP_BAR_H), egui::Sense::hover());
         let p = ui.painter();
         p.rect_filled(rect, 2.0, Color32::from_rgb(30, 34, 41));
         if let Some(pct) = pct {
             let frac = (pct / 100.0).clamp(0.0, 1.0);
             if frac > 0.01 {
-                let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width() * frac, rect.height()));
+                let bar =
+                    Rect::from_min_size(rect.min, Vec2::new(rect.width() * frac, rect.height()));
                 p.rect_filled(bar, 2.0, Self::load_color(frac));
             }
         }
@@ -1107,7 +1273,11 @@ impl App {
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             // Sem decoração não há barra de título: arrastar qualquer parte vazia move a
             // janela. A interação vem antes dos widgets para os botões ganharem o clique.
-            let bg = ui.interact(ui.max_rect(), ui.id().with("mini_drag"), egui::Sense::click_and_drag());
+            let bg = ui.interact(
+                ui.max_rect(),
+                ui.id().with("mini_drag"),
+                egui::Sense::click_and_drag(),
+            );
             if bg.drag_started() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
@@ -1121,14 +1291,20 @@ impl App {
             let cpu_pct = self.sys.cpu_pct;
             ui.horizontal(|ui| {
                 Self::meter_tile(ui, w, "CPU", cpu_pct, self.cpu_temp(), "", |ui, w| {
-                    Self::meter_bar(ui, w, cpu_pct, "Uso de CPU");
+                    Self::meter_bar(ui, w, cpu_pct, "CPU usage");
                 });
                 let used = self.mem.used_phys();
                 let total = self.mem.total_phys.max(1);
                 let sub = format!("{} / {}", fmt_gb(used), fmt_gb(total));
-                Self::meter_tile(ui, w, "RAM", Some(used as f32 / total as f32 * 100.0), self.ram_temp(), &sub, |ui, w| {
-                    self.ram_gauge(ui, w)
-                });
+                Self::meter_tile(
+                    ui,
+                    w,
+                    "RAM",
+                    Some(used as f32 / total as f32 * 100.0),
+                    self.ram_temp(),
+                    &sub,
+                    |ui, w| self.ram_gauge(ui, w),
+                );
             });
             ui.horizontal(|ui| {
                 let gpu = self.sys.gpu.clone();
@@ -1137,16 +1313,22 @@ impl App {
                         g.util_pct,
                         match g.temp_c {
                             Some(t) => Temp::C(t),
-                            None => Temp::Missing("O driver não reportou temperatura desta GPU.".into()),
+                            None => Temp::Missing(
+                                "The driver did not report this GPU's temperature.".into(),
+                            ),
                         },
-                        if g.mem_total > 0 { format!("{} / {}", fmt_gb(g.mem_used), fmt_gb(g.mem_total)) } else { String::new() },
+                        if g.mem_total > 0 {
+                            format!("{} / {}", fmt_gb(g.mem_used), fmt_gb(g.mem_total))
+                        } else {
+                            String::new()
+                        },
                         g.name.clone(),
                     ),
                     None => (
                         None,
-                        Temp::Missing("Sem leitura de GPU: nvml.dll não carregou.".into()),
+                        Temp::Missing("No GPU reading: nvml.dll did not load.".into()),
                         String::new(),
-                        "Sem leitura de GPU neste host".to_string(),
+                        "No GPU reading on this host".to_string(),
                     ),
                 };
                 Self::meter_tile(ui, w, "GPU", gpu_pct, gpu_temp, &gpu_sub, |ui, w| {
@@ -1159,8 +1341,8 @@ impl App {
                     .filter(|bps| *bps >= 1024.0)
                     .map(fmt_bps)
                     .unwrap_or_default();
-                Self::meter_tile(ui, w, "DISCO", disk_pct, Temp::None, &disk_sub, |ui, w| {
-                    Self::meter_bar(ui, w, disk_pct, "Tempo ocupado do disco");
+                Self::meter_tile(ui, w, "DISK", disk_pct, Temp::None, &disk_sub, |ui, w| {
+                    Self::meter_bar(ui, w, disk_pct, "Disk busy time");
                 });
             });
             self.mini_fans(ui);
@@ -1199,13 +1381,13 @@ impl App {
         match self.hwtemp.cpu_temp {
             Some(t) => Temp::C(t.round() as u32),
             None if cfg!(not(windows)) => {
-                Temp::Missing("Temperatura de CPU no macOS ainda não está ligada (o helper hwtemp é Windows).".into())
+                Temp::Missing("CPU temperature on macOS is not connected yet (the hwtemp helper is Windows-only).".into())
             }
             None if !self.is_admin => {
-                Temp::Missing("Temperatura de CPU precisa de admin: o sensor Tctl só responde por driver de hardware. Volte ao modo completo e use ⬆ Admin.".into())
+                Temp::Missing("CPU temperature requires administrator access: the Tctl sensor only responds through a hardware driver. Return to full mode and use ⬆ Admin.".into())
             }
             None => Temp::Missing(
-                "Temperatura indisponível: hwtemp.exe não está ao lado do ramdog.exe, ou a placa-mãe não tem sensor suportado.".into(),
+                "Temperature unavailable: hwtemp.exe is not next to ramdog.exe, or the motherboard has no supported sensor.".into(),
             ),
         }
     }
@@ -1213,8 +1395,10 @@ impl App {
     fn ram_temp(&self) -> Temp {
         match self.hwtemp.ram_max() {
             Some(t) => Temp::C(t.round() as u32),
-            None if !self.is_admin => Temp::Missing("Temperatura dos pentes precisa de admin (leitura SMBus).".into()),
-            None => Temp::Missing("Nenhum pente desta máquina expõe sensor de temperatura.".into()),
+            None if !self.is_admin => Temp::Missing(
+                "DIMM temperature requires administrator access (SMBus reading).".into(),
+            ),
+            None => Temp::Missing("No DIMM on this machine exposes a temperature sensor.".into()),
         }
     }
 
@@ -1226,20 +1410,20 @@ impl App {
         let stab_on = self.stab_on();
         let has_fans = !self.hwtemp.fans.is_empty();
         let (label, bg, fg) = if !has_fans {
-            ("ESTABILIZAR".to_owned(), SURFACE, MUTED)
+            ("STABILIZE".to_owned(), SURFACE, MUTED)
         } else if !stab_on {
-            ("ESTABILIZAR".to_owned(), ACCENT_BG, ACCENT)
+            ("STABILIZE".to_owned(), ACCENT_BG, ACCENT)
         } else if held > 50.5 {
             (format!("FANS {held:.0}%"), THERM_WARN_BG, THERM_WARN_FG)
         } else {
             ("FANS 50%".to_owned(), THERM_STAB_BG, THERM_STAB_FG)
         };
         let tip = if !has_fans {
-            "Controle de fans indisponível: precisa de admin e do hwtemp.exe ao lado do ramdog.exe."
+            "Fan control unavailable: administrator access and hwtemp.exe next to ramdog.exe are required."
         } else if stab_on {
-            "Curva do TempHUD ligada. Clique para devolver os fans à BIOS."
+            "TempHUD curve enabled. Click to return fan control to the BIOS."
         } else {
-            "Trava os fans SuperIO em 50% e sobe em rampa a partir de 80°C (100% aos 92°C). Clicar de novo devolve à BIOS."
+            "Locks Super I/O fans at 50% and ramps up from 80°C (100% at 92°C). Click again to return control to the BIOS."
         };
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 7.0;
@@ -1253,29 +1437,50 @@ impl App {
             }
             // RPM discreto: só os que giram, no máximo quatro. O detalhe completo (nome e %
             // de cada fan) fica no hover — a faixa é para olhar de canto de olho.
-            let spinning: Vec<&crate::hwtemp::FanRow> =
-                self.hwtemp.fans.iter().filter(|f| f.rpm.unwrap_or(0.0) > 0.0).collect();
+            let spinning: Vec<&crate::hwtemp::FanRow> = self
+                .hwtemp
+                .fans
+                .iter()
+                .filter(|f| f.rpm.unwrap_or(0.0) > 0.0)
+                .collect();
             if spinning.is_empty() {
                 if has_fans {
-                    ui.label(RichText::new("fans parados").color(MUTED).size(10.5));
+                    ui.label(RichText::new("fans stopped").color(MUTED).size(10.5));
                 }
                 return;
             }
-            let shown: Vec<String> = spinning.iter().take(4).map(|f| format!("{:.0}", f.rpm.unwrap_or(0.0))).collect();
+            let shown: Vec<String> = spinning
+                .iter()
+                .take(4)
+                .map(|f| format!("{:.0}", f.rpm.unwrap_or(0.0)))
+                .collect();
             let mut detail = String::new();
             for f in &spinning {
-                let pct = f.pct.map(|p| format!("{p:.0}%")).unwrap_or_else(|| "–".into());
+                let pct = f
+                    .pct
+                    .map(|p| format!("{p:.0}%"))
+                    .unwrap_or_else(|| "–".into());
                 let mode = if f.guard {
-                    " (proteção)"
+                    " (protection)"
                 } else if f.auto {
                     " (BIOS)"
                 } else {
                     ""
                 };
-                detail.push_str(&format!("{}  {}  {:.0} rpm{}\n", f.name, pct, f.rpm.unwrap_or(0.0), mode));
+                detail.push_str(&format!(
+                    "{}  {}  {:.0} rpm{}\n",
+                    f.name,
+                    pct,
+                    f.rpm.unwrap_or(0.0),
+                    mode
+                ));
             }
-            ui.label(RichText::new(format!("{} rpm", shown.join(" · "))).color(MUTED).size(10.5))
-                .on_hover_text(detail.trim_end().to_string());
+            ui.label(
+                RichText::new(format!("{} rpm", shown.join(" · ")))
+                    .color(MUTED)
+                    .size(10.5),
+            )
+            .on_hover_text(detail.trim_end().to_string());
         });
     }
 
@@ -1286,36 +1491,53 @@ impl App {
             ui.spacing_mut().item_spacing.x = 4.0;
             ui.spacing_mut().button_padding = Vec2::new(5.0, 1.0);
             ui.label(RichText::new("RamDog").strong().size(11.5).color(MUTED))
-                .on_hover_text("Arraste para mover");
+                .on_hover_text("Drag to move");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.small_button("✕").on_hover_text("Fechar").clicked() {
+                if ui.small_button("✕").on_hover_text("Close").clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
-                if ui.small_button("⤢").on_hover_text("Voltar ao completo (ou duplo clique)").clicked() {
+                if ui
+                    .small_button("⤢")
+                    .on_hover_text("Back to full mode (or double-click)")
+                    .clicked()
+                {
                     self.set_mini(false);
                 }
                 // Sem decoração não há botão de minimizar do Windows — o HUD precisa do
                 // seu. Volta pela barra de tarefas, como qualquer janela.
-                if ui.small_button("–").on_hover_text("Minimizar").clicked() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                if ui.small_button("–").on_hover_text("Minimize").clicked() {
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                 }
                 let mut on_top = self.cfg.mini_on_top;
-                if ui.selectable_label(on_top, RichText::new("topo").size(11.0)).on_hover_text("Manter por cima").clicked() {
+                if ui
+                    .selectable_label(on_top, RichText::new("top").size(11.0))
+                    .on_hover_text("Keep on top")
+                    .clicked()
+                {
                     on_top = !on_top;
                     self.cfg.mini_on_top = on_top;
                     self.cfg_dirty = true;
                     self.apply_on_top(ui.ctx());
                 }
                 let mut paused = self.sampler.paused.load(Ordering::Relaxed);
-                let (icon, tip) = if paused { ("▶", "Retomar") } else { ("⏸", "Pausar") };
-                if ui.selectable_label(paused, RichText::new(icon).size(11.0)).on_hover_text(tip).clicked() {
+                let (icon, tip) = if paused {
+                    ("▶", "Resume")
+                } else {
+                    ("⏸", "Pause")
+                };
+                if ui
+                    .selectable_label(paused, RichText::new(icon).size(11.0))
+                    .on_hover_text(tip)
+                    .clicked()
+                {
                     paused = !paused;
                     self.sampler.paused.store(paused, Ordering::Relaxed);
                 }
                 let iv = self.cfg.refresh_ms;
                 if ui
                     .small_button(format!("{:.1}s", iv as f32 / 1000.0))
-                    .on_hover_text("Ritmo — clique para alternar")
+                    .on_hover_text("Interval — click to cycle")
                     .clicked()
                 {
                     const STEPS: [u64; 4] = [500, 1000, 2000, 5000];
@@ -1351,11 +1573,22 @@ impl App {
                 ui.label(RichText::new(label).color(MUTED).size(10.5));
                 match temp {
                     Temp::C(t) => {
-                        ui.label(RichText::new(format!("{t}°C")).monospace().size(11.0).strong().color(Self::temp_color(t)));
+                        ui.label(
+                            RichText::new(format!("{t}°C"))
+                                .monospace()
+                                .size(11.0)
+                                .strong()
+                                .color(Self::temp_color(t)),
+                        );
                     }
                     Temp::Missing(why) => {
-                        ui.label(RichText::new("–°C").monospace().size(11.0).color(Color32::from_gray(90)))
-                            .on_hover_text(why);
+                        ui.label(
+                            RichText::new("–°C")
+                                .monospace()
+                                .size(11.0)
+                                .color(Color32::from_gray(90)),
+                        )
+                        .on_hover_text(why);
                     }
                     Temp::None => {}
                 }
@@ -1372,7 +1605,12 @@ impl App {
                         );
                     }
                     None => {
-                        ui.label(RichText::new("–").monospace().size(19.0).color(Color32::from_gray(90)));
+                        ui.label(
+                            RichText::new("–")
+                                .monospace()
+                                .size(19.0)
+                                .color(Color32::from_gray(90)),
+                        );
                     }
                 }
                 if !sub.is_empty() {
@@ -1398,7 +1636,7 @@ impl App {
 
             let cpu_pct = self.sys.cpu_pct;
             Self::meter_tile(ui, TILE_W, "CPU", cpu_pct, self.cpu_temp(), "", |ui, w| {
-                Self::meter_bar(ui, w, cpu_pct, "Uso de CPU (todos os núcleos)");
+                Self::meter_bar(ui, w, cpu_pct, "CPU usage (all cores)");
             });
 
             let used = self.mem.used_phys();
@@ -1419,10 +1657,10 @@ impl App {
                 Some(g) => {
                     let mut tip = g.name.clone();
                     if let Some(w) = g.power_w {
-                        tip.push_str(&format!("\nPotência: {w:.0} W"));
+                        tip.push_str(&format!("\nPower: {w:.0} W"));
                     }
                     if let Some(f) = g.fan_pct {
-                        tip.push_str(&format!("\nCooler: {f}%"));
+                        tip.push_str(&format!("\nFan: {f}%"));
                     }
                     let vram = if g.mem_total > 0 {
                         format!("{} / {}", fmt_gb(g.mem_used), fmt_gb(g.mem_total))
@@ -1431,15 +1669,15 @@ impl App {
                     };
                     let t = match g.temp_c {
                         Some(t) => Temp::C(t),
-                        None => Temp::Missing("O driver não reportou temperatura desta GPU.".into()),
+                        None => Temp::Missing("The driver did not report this GPU's temperature.".into()),
                     };
                     (g.util_pct, t, vram, tip)
                 }
                 None => (
                     None,
-                    Temp::Missing("Sem leitura de GPU: nvml.dll não carregou (placas AMD/Intel ainda não têm essa leitura aqui).".into()),
+                    Temp::Missing("No GPU reading: nvml.dll did not load (AMD/Intel cards are not supported here yet).".into()),
                     String::new(),
-                    "Sem GPU NVIDIA detectada (nvml.dll não carregou) — sem essa leitura em placas AMD/Intel aqui ainda.".to_string(),
+                    "No NVIDIA GPU detected (nvml.dll did not load) — AMD/Intel cards are not supported here yet.".to_string(),
                 ),
             };
             Self::meter_tile(ui, TILE_W, "GPU", gpu_pct, gpu_temp, &gpu_sub, |ui, w| {
@@ -1456,11 +1694,11 @@ impl App {
                 .map(fmt_bps)
                 .unwrap_or_default();
             let disk_tip = if disk_pct.is_some() {
-                "% de tempo ocupado do disco (todos os volumes) — igual ao Gerenciador de Tarefas"
+                "% of disk busy time (all volumes) — same as Task Manager"
             } else {
-                "Contador de disco indisponível neste host."
+                "Disk counter unavailable on this host."
             };
-            Self::meter_tile(ui, TILE_W, "DISCO", disk_pct, Temp::None, &disk_sub, |ui, w| {
+            Self::meter_tile(ui, TILE_W, "DISK", disk_pct, Temp::None, &disk_sub, |ui, w| {
                 Self::meter_bar(ui, w, disk_pct, disk_tip);
             });
 
@@ -1479,9 +1717,13 @@ impl App {
         // os medidores.
         if wrapped {
             ui.add_space(4.0);
-            ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), CTRL_H), Layout::right_to_left(Align::Center), |ui| {
-                self.top_controls(ui);
-            });
+            ui.allocate_ui_with_layout(
+                Vec2::new(ui.available_width(), CTRL_H),
+                Layout::right_to_left(Align::Center),
+                |ui| {
+                    self.top_controls(ui);
+                },
+            );
         }
         self.ui_filters(ui);
     }
@@ -1508,7 +1750,7 @@ impl App {
             .corner_radius(4.0);
         if ui
             .add(mini)
-            .on_hover_text("Modo mini: uma janelinha só com CPU, RAM, GPU, disco e temperaturas, por cima das outras janelas")
+            .on_hover_text("Mini mode: a small window with only CPU, RAM, GPU, disk, and temperatures, kept above other windows")
             .clicked()
         {
             self.set_mini(true);
@@ -1516,11 +1758,11 @@ impl App {
         ui.separator();
         if self.is_admin {
             ui.label(RichText::new("ADMIN").color(Color32::from_rgb(90, 220, 130)).strong().size(12.0))
-                .on_hover_text("Rodando elevado: pode encerrar processos de outros usuários/serviços");
+                .on_hover_text("Running elevated: can terminate processes owned by other users/services");
         } else if cfg!(windows)
             && ui
                 .button(RichText::new("⬆ Admin").size(12.5))
-                .on_hover_text("Reabrir como administrador — necessário para encerrar serviços, processos de outros usuários e ler a temperatura da CPU")
+                .on_hover_text("Reopen as administrator — required to terminate services/processes owned by other users and read CPU temperature")
                 .clicked()
         {
             self.relaunch_as_admin();
@@ -1528,8 +1770,11 @@ impl App {
         ui.separator();
         let mut confirm = self.cfg.confirm_kill;
         if ui
-            .checkbox(&mut confirm, RichText::new("Confirmar kill").size(12.5))
-            .on_hover_text("Pedir confirmação antes de encerrar")
+            .checkbox(
+                &mut confirm,
+                RichText::new("Confirm termination").size(12.5),
+            )
+            .on_hover_text("Ask for confirmation before terminating")
             .changed()
         {
             self.cfg.confirm_kill = confirm;
@@ -1551,8 +1796,11 @@ impl App {
         }
         let mut paused = self.sampler.paused.load(Ordering::Relaxed);
         if ui
-            .selectable_label(paused, RichText::new(if paused { "▶ Retomar" } else { "⏸ Pausar" }).size(12.5))
-            .on_hover_text("Congela a amostragem — os números param no último valor lido")
+            .selectable_label(
+                paused,
+                RichText::new(if paused { "▶ Resume" } else { "⏸ Pause" }).size(12.5),
+            )
+            .on_hover_text("Freeze sampling — values stay at the last reading")
             .clicked()
         {
             paused = !paused;
@@ -1572,16 +1820,16 @@ impl App {
             ui.spacing_mut().button_padding = Vec2::new(9.0, 2.0);
             let te = egui::TextEdit::singleline(&mut self.search)
                 .hint_text(if self.cfg.view == ViewMode::Boot {
-                    "Buscar nome, comando ou origem…"
+                    "Search name, command, or origin…"
                 } else {
-                    "Buscar nome, PID, caminho ou comando…"
+                    "Search name, PID, path, or command…"
                 })
                 .desired_width(240.0);
             let resp = ui.add(te);
             if resp.changed() {
                 self.scroll_to_selected = false;
             }
-            if !self.search.is_empty() && ui.button("✖").on_hover_text("Limpar busca").clicked() {
+            if !self.search.is_empty() && ui.button("✖").on_hover_text("Clear search").clicked() {
                 self.search.clear();
             }
             ui.add_space(4.0);
@@ -1598,12 +1846,12 @@ impl App {
                     // exatamente na mesma altura da busca e do combo ao lado.
                     ui.spacing_mut().interact_size.y = CTRL_H - 4.0;
                     for (v, label, tip) in [
-                        (ViewMode::List, "Lista", "Todos os processos, um por linha"),
-                        (ViewMode::Tree, "Árvore", "Pai → filhos, com a RAM da subárvore"),
-                        (ViewMode::Category, "Categorias", "Agrupado por categoria"),
-                        (ViewMode::Boot, "Partida", "Tudo que sobe com o PC — registro, pasta Iniciar, tarefas, serviços. Sem o recorte do Gerenciador de Tarefas"),
-                        (ViewMode::Drains, "Ralos", "Defender, serviços dispensáveis e apps de sistema"),
-                        (ViewMode::Thermal, "Térmico", "Sensores, controle de fans e ESTABILIZAR — o TempHUD dentro do RamDog"),
+                        (ViewMode::List, "List", "All processes, one per row"),
+                        (ViewMode::Tree, "Tree", "Parent → children, with subtree RAM"),
+                        (ViewMode::Category, "Categories", "Grouped by category"),
+                        (ViewMode::Boot, "Startup", "Everything that starts with the PC — registry, startup folder, tasks, services. Beyond Task Manager's limited list"),
+                        (ViewMode::Drains, "Drains", "Defender, optional services, and system apps"),
+                        (ViewMode::Thermal, "Thermal", "Sensors, fan control, and STABILIZE — TempHUD inside RamDog"),
                     ] {
                         let on = view == v;
                         let t = RichText::new(label)
@@ -1625,10 +1873,10 @@ impl App {
                 self.cfg_dirty = true;
             }
             if self.cfg.view == ViewMode::Tree {
-                if ui.button("Expandir tudo").clicked() {
+                if ui.button("Expand all").clicked() {
                     self.expanded = self.children.keys().copied().collect();
                 }
-                if ui.button("Recolher").clicked() {
+                if ui.button("Collapse").clicked() {
                     self.expanded.clear();
                 }
             }
@@ -1652,11 +1900,11 @@ impl App {
                 self.rows_dirty = true;
             }
             ui.add_space(4.0);
-            ui.label(RichText::new("mín.").color(MUTED).size(12.0));
+            ui.label(RichText::new("min.").color(MUTED).size(12.0));
             let mut min_mb = self.cfg.min_mb;
             if ui
                 .add(egui::DragValue::new(&mut min_mb).range(0..=4096).speed(5).suffix(" MB"))
-                .on_hover_text("Ocultar processos com menos RAM que isto, na métrica escolhida ao lado")
+                .on_hover_text("Hide processes with less RAM than this, using the selected metric")
                 .changed()
             {
                 self.cfg.min_mb = min_mb;
@@ -1679,10 +1927,19 @@ impl App {
                     .color(if on { col } else { MUTED })
                     .size(12.0);
                 let btn = egui::Button::new(text)
-                    .fill(if on { col.gamma_multiply(0.14) } else { Color32::TRANSPARENT })
-                    .stroke(egui::Stroke::new(1.0_f32, if on { col.gamma_multiply(0.55) } else { LINE }))
+                    .fill(if on {
+                        col.gamma_multiply(0.14)
+                    } else {
+                        Color32::TRANSPARENT
+                    })
+                    .stroke(egui::Stroke::new(
+                        1.0_f32,
+                        if on { col.gamma_multiply(0.55) } else { LINE },
+                    ))
                     .corner_radius(10.0);
-                let r = ui.add(btn).on_hover_text(format!("{n} processos — clique: alterna; duplo clique: só esta"));
+                let r = ui.add(btn).on_hover_text(format!(
+                    "{n} processes — click: toggle; double-click: only this"
+                ));
                 if r.double_clicked() {
                     solo = Some(c);
                 } else if r.clicked() {
@@ -1706,20 +1963,30 @@ impl App {
                 let on = self.cfg.show_kernel_rows;
                 let col = SysRow::PagedPool.color();
                 let sys_total = b.paged_pool + b.nonpaged_pool + b.shared_and_cache;
-                let text = RichText::new(format!("▣ Sistema (não-processo)  {}", fmt_bytes_short(sys_total)))
-                    .color(if on { col } else { MUTED })
-                    .size(12.0);
+                let text = RichText::new(format!(
+                    "▣ System (non-process)  {}",
+                    fmt_bytes_short(sys_total)
+                ))
+                .color(if on { col } else { MUTED })
+                .size(12.0);
                 let btn = egui::Button::new(text)
-                    .fill(if on { col.gamma_multiply(0.14) } else { Color32::TRANSPARENT })
-                    .stroke(egui::Stroke::new(1.0_f32, if on { col.gamma_multiply(0.55) } else { LINE }))
+                    .fill(if on {
+                        col.gamma_multiply(0.14)
+                    } else {
+                        Color32::TRANSPARENT
+                    })
+                    .stroke(egui::Stroke::new(
+                        1.0_f32,
+                        if on { col.gamma_multiply(0.55) } else { LINE },
+                    ))
                     .corner_radius(10.0);
                 if ui
                     .add(btn)
                     .on_hover_text(
-                        "Mostra ou esconde as três linhas de memória que não pertencem a processo \
-                         nenhum (pools do kernel e compartilhado/cache).\n\n\
-                         Esconder muda só a lista: o medidor do topo e a conferência do rodapé \
-                         continuam contando essa memória.",
+                        "Show or hide the three memory rows that do not belong to any process \
+                         (kernel pools and shared/cache).\n\n\
+                         Hiding them changes only the list: the top meter and footer \
+                         reconciliation still count this memory.",
                     )
                     .clicked()
                 {
@@ -1728,7 +1995,7 @@ impl App {
                     self.rows_dirty = true;
                 }
             }
-            if self.cat_enabled.len() != Category::ALL.len() && ui.button("todas").clicked() {
+            if self.cat_enabled.len() != Category::ALL.len() && ui.button("all").clicked() {
                 self.cat_enabled = Category::ALL.iter().copied().collect();
             }
         });
@@ -1745,14 +2012,26 @@ impl App {
 
     fn header_btn(&mut self, ui: &mut egui::Ui, key: SortKey, label: &str) {
         let active = self.sort == key;
-        let arrow = if active { if self.sort_desc { " ▾" } else { " ▴" } } else { "" };
+        let arrow = if active {
+            if self.sort_desc {
+                " ▾"
+            } else {
+                " ▴"
+            }
+        } else {
+            ""
+        };
         // Todos os títulos com o mesmo peso; só a cor marca a coluna ordenada — antes a
         // ativa virava uma caixa cinza que parecia um botão perdido no cabeçalho.
         let text = RichText::new(format!("{label}{arrow}"))
             .size(11.5)
             .strong()
             .color(if active { ACCENT } else { MUTED });
-        if ui.add(egui::Button::new(text).frame(false)).on_hover_text("Clique para ordenar por esta coluna").clicked() {
+        if ui
+            .add(egui::Button::new(text).frame(false))
+            .on_hover_text("Click to sort by this column")
+            .clicked()
+        {
             if active {
                 self.sort_desc = !self.sort_desc;
             } else {
@@ -1783,7 +2062,10 @@ impl App {
             .filter_map(|r| match r {
                 Row::Proc { pid, .. } => {
                     if tree {
-                        self.subtree.get(pid).copied().or_else(|| self.proc(*pid).map(|p| self.mem_of(p)))
+                        self.subtree
+                            .get(pid)
+                            .copied()
+                            .or_else(|| self.proc(*pid).map(|p| self.mem_of(p)))
                     } else {
                         self.proc(*pid).map(|p| self.mem_of(p))
                     }
@@ -1796,16 +2078,23 @@ impl App {
         let row_x = self.table_rect.map(|r| r.x_range());
         // Divisórias de coluna quase invisíveis: com listras zebradas, linha vertical em
         // toda coluna é tinta dobrada.
-        ui.visuals_mut().widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(29, 33, 40));
+        ui.visuals_mut().widgets.noninteractive.bg_stroke =
+            Stroke::new(1.0_f32, Color32::from_rgb(29, 33, 40));
 
         // Maior GPU%/disco visível — escala das barras de magnitude dessas colunas.
         let max_gpu: f32 = rows
             .iter()
-            .filter_map(|r| match r { Row::Proc { pid, .. } => self.proc(*pid).map(|p| p.gpu_pct), _ => None })
+            .filter_map(|r| match r {
+                Row::Proc { pid, .. } => self.proc(*pid).map(|p| p.gpu_pct),
+                _ => None,
+            })
             .fold(1.0_f32, f32::max);
         let max_disk: f64 = rows
             .iter()
-            .filter_map(|r| match r { Row::Proc { pid, .. } => self.proc(*pid).map(|p| p.disk_bps), _ => None })
+            .filter_map(|r| match r {
+                Row::Proc { pid, .. } => self.proc(*pid).map(|p| p.disk_bps),
+                _ => None,
+            })
             .fold(1.0_f64, f64::max);
 
         let mut table = TableBuilder::new(ui)
@@ -1827,7 +2116,10 @@ impl App {
             .min_scrolled_height(0.0);
         if self.scroll_to_selected {
             if let Some(sel) = self.selected {
-                if let Some(i) = rows.iter().position(|r| matches!(r, Row::Proc { pid, .. } if *pid == sel)) {
+                if let Some(i) = rows
+                    .iter()
+                    .position(|r| matches!(r, Row::Proc { pid, .. } if *pid == sel))
+                {
                     table = table.scroll_to_row(i, Some(Align::Center));
                 }
             }
@@ -1836,11 +2128,11 @@ impl App {
 
         table
             .header(22.0, |mut header| {
-                header.col(|ui| self.header_btn(ui, SortKey::Name, "Nome"));
+                header.col(|ui| self.header_btn(ui, SortKey::Name, "Name"));
                 let ram_label = match (tree, self.cfg.mem_metric) {
-                    (true, MemMetric::Private) => "Priv. (árvore)".to_string(),
-                    (true, MemMetric::Commit) => "Commit (árvore)".to_string(),
-                    (true, _) => "RAM (árvore)".to_string(),
+                    (true, MemMetric::Private) => "Private (tree)".to_string(),
+                    (true, MemMetric::Commit) => "Commit (tree)".to_string(),
+                    (true, _) => "RAM (tree)".to_string(),
                     (false, m) => m.short().to_string(),
                 };
                 header.col(|ui| {
@@ -1851,21 +2143,21 @@ impl App {
                     .col(|ui| { self.header_btn_right(ui, SortKey::Gpu, "GPU"); })
                     .1
                     .on_hover_text(if self.gpu_per_proc {
-                        "% de uso da GPU (engine mais ocupada do processo)".to_string()
+                        "% GPU usage (busiest engine in the process)".to_string()
                     } else {
-                        "Contador de GPU por processo indisponível neste host".to_string()
+                        "Per-process GPU counter unavailable on this host".to_string()
                     });
-                header.col(|ui| self.header_btn_right(ui, SortKey::Disk, "Disco"));
+                header.col(|ui| self.header_btn_right(ui, SortKey::Disk, "Disk"));
                 header.col(|ui| self.header_btn(ui, SortKey::Cat, "Cat."));
                 header.col(|ui| self.header_btn(ui, SortKey::Pid, "PID"));
-                header.col(|ui| self.header_btn(ui, SortKey::Age, "Idade"));
-                header.col(|ui| self.header_btn(ui, SortKey::Parent, "Origem"));
+                header.col(|ui| self.header_btn(ui, SortKey::Age, "Age"));
+                header.col(|ui| self.header_btn(ui, SortKey::Parent, "Origin"));
                 header.col(|ui| {
-                    ui.label(RichText::new("Comando").size(11.5).strong().color(MUTED))
-                        .on_hover_text("Argumentos da linha de comando (o caminho do exe já está no nome)");
+                    ui.label(RichText::new("Command").size(11.5).strong().color(MUTED))
+                        .on_hover_text("Command-line arguments (the exe path is already in the name)");
                 });
                 header.col(|ui| {
-                    ui.label(RichText::new("Ações").size(11.5).strong().color(MUTED));
+                    ui.label(RichText::new("Actions").size(11.5).strong().color(MUTED));
                 });
             })
             .body(|body| {
@@ -1895,14 +2187,14 @@ impl App {
                                 row.col(|_ui| {});
                             }
                             row.col(|ui| {
-                                ui.label(RichText::new("sistema").weak().italics());
+                                ui.label(RichText::new("system").weak().italics());
                             });
                             // PID, Idade, Origem
                             for _ in 0..3 {
                                 row.col(|_ui| {});
                             }
                             row.col(|ui| {
-                                ui.label(RichText::new("não é processo — não pode ser encerrado").weak().small());
+                                ui.label(RichText::new("not a process — cannot be terminated").weak().small());
                             });
                             row.col(|_ui| {});
                             row.response().on_hover_text(kind.tip());
@@ -1957,7 +2249,7 @@ impl App {
                                         let b = egui::Button::new(RichText::new(arrow).weak().small())
                                             .frame(false)
                                             .min_size(Vec2::new(18.0, ROW_H - 2.0));
-                                        if ui.add(b).on_hover_text("Expandir / recolher (duplo clique na linha também)").clicked() {
+                                        if ui.add(b).on_hover_text("Expand / collapse (double-click the row too)").clicked() {
                                             toggle_expand = Some(pid);
                                         }
                                     } else {
@@ -1980,7 +2272,7 @@ impl App {
                                 }
                                 let lbl = ui.add(egui::Label::new(name).truncate());
                                 if locked {
-                                    lbl.on_hover_text(if critical { "Processo crítico do Windows" } else { "Protegido (lock)" });
+                                    lbl.on_hover_text(if critical { "Critical Windows process" } else { "Protected (lock)" });
                                 }
                                 if tree && has_children && !expanded {
                                     let c = self.subtree_count.get(&pid).copied().unwrap_or(1) - 1;
@@ -2018,7 +2310,7 @@ impl App {
                                     if tree && has_children && shown != own {
                                         let n = self.subtree_count.get(&pid).copied().unwrap_or(1) - 1;
                                         r.on_hover_text(format!(
-                                            "Deste processo: {}\nCom os {} filhos: {}\n\nA coluna soma a subárvore inteira — o número grande costuma ser dos filhos, não deste processo.",
+                                            "This process: {}\nWith {} children: {}\n\nThe column sums the entire subtree — the large value usually belongs to the children, not this process.",
                                             fmt_bytes(own),
                                             n,
                                             fmt_bytes(shown)
@@ -2056,7 +2348,7 @@ impl App {
                                     ui.add_space(2.0);
                                     if !self.gpu_per_proc {
                                         ui.label(RichText::new("–").color(Color32::from_gray(90)))
-                                            .on_hover_text("Contador de GPU por processo indisponível neste host");
+                                            .on_hover_text("Per-process GPU counter unavailable on this host");
                                     } else if p.gpu_pct < 0.05 {
                                         ui.label(num("–").color(MUTED));
                                     } else {
@@ -2099,7 +2391,7 @@ impl App {
                                     t = t.underline();
                                 }
                                 ui.label(t).on_hover_text(if overridden {
-                                    format!("{} (definido manualmente)", cat.label())
+                                    format!("{} (manual override)", cat.label())
                                 } else {
                                     cat.label().to_string()
                                 });
@@ -2147,7 +2439,7 @@ impl App {
                                 } else {
                                     let list: Vec<String> =
                                         svcs.iter().map(|(n, d)| format!("{d}  ({n})")).collect();
-                                    format!("Serviços hospedados neste processo:\n{}", list.join("\n"))
+                                    format!("Services hosted in this process:\n{}", list.join("\n"))
                                 };
                                 let r = ui.add(egui::Label::new(RichText::new(&s).color(color).size(11.5)).truncate());
                                 if !full.is_empty() {
@@ -2165,9 +2457,9 @@ impl App {
                                 let btn_size = Vec2::new(22.0, ROW_H - 4.0);
                                 if critical {
                                     ui.add_sized(btn_size, egui::Label::new(RichText::new("🔒").color(Color32::from_gray(if hot { 130 } else { 80 }))))
-                                        .on_hover_text("Crítico do Windows — não pode ser encerrado");
+                                        .on_hover_text("Critical Windows process — cannot be terminated");
                                 } else {
-                                    let (icon, tip) = if locked { ("🔒", "Protegido — clique para desproteger") } else { ("🔓", "Clique para proteger (lock)") };
+                                    let (icon, tip) = if locked { ("🔒", "Protected — click to unlock") } else { ("🔓", "Click to protect (lock)") };
                                     let col = if locked {
                                         Color32::from_rgb(120, 200, 255)
                                     } else if hot {
@@ -2182,7 +2474,7 @@ impl App {
                                     if !locked {
                                         let kc = if hot { Color32::from_rgb(235, 90, 90) } else { Color32::from_gray(76) };
                                         let kb = egui::Button::new(RichText::new("✖").color(kc)).frame(false).min_size(btn_size);
-                                        let r = ui.add(kb).on_hover_text("Finalizar processo (Shift: árvore inteira)");
+                                        let r = ui.add(kb).on_hover_text("Terminate process (Shift: entire tree)");
                                         if r.clicked() {
                                             let shift = ui.input(|i| i.modifiers.shift);
                                             kill = Some((pid, shift));
@@ -2202,25 +2494,25 @@ impl App {
                                 ui.label(RichText::new(format!("{} — PID {}", p.name, p.pid)).strong());
                                 ui.separator();
                                 if !locked {
-                                    if ui.button("✖ Finalizar processo").clicked() {
+                                    if ui.button("✖ Terminate process").clicked() {
                                         kill = Some((pid, false));
                                         ui.close_menu();
                                     }
                                     let n = self.subtree_count.get(&pid).copied().unwrap_or(1);
-                                    if n > 1 && ui.button(format!("✖ Finalizar árvore ({n} processos)")).clicked() {
+                                    if n > 1 && ui.button(format!("✖ Terminate tree ({n} processes)")).clicked() {
                                         kill = Some((pid, true));
                                         ui.close_menu();
                                     }
                                 }
                                 if !critical {
-                                    let lt = if locked { "🔓 Desproteger" } else { "🔒 Proteger (lock)" };
+                                    let lt = if locked { "🔓 Unlock" } else { "🔒 Protect (lock)" };
                                     if ui.button(lt).clicked() {
                                         lock = Some(p.name_lower.clone());
                                         ui.close_menu();
                                     }
                                 }
                                 ui.separator();
-                                ui.menu_button("Categoria", |ui| {
+                                ui.menu_button("Category", |ui| {
                                     for c in Category::ALL {
                                         let cur = cat == c;
                                         if ui.selectable_label(cur, RichText::new(c.label()).color(c.color())).clicked() {
@@ -2229,26 +2521,26 @@ impl App {
                                         }
                                     }
                                     ui.separator();
-                                    if ui.button("Regra automática").clicked() {
+                                    if ui.button("Automatic rule").clicked() {
                                         set_cat = Some((p.name_lower.clone(), None));
                                         ui.close_menu();
                                     }
                                 });
-                                if p.ppid != 0 && self.proc(p.ppid).is_some() && ui.button("↑ Ir para o pai").clicked() {
+                                if p.ppid != 0 && self.proc(p.ppid).is_some() && ui.button("↑ Go to parent").clicked() {
                                     click_select = Some(p.ppid);
                                     ui.close_menu();
                                 }
                                 ui.separator();
-                                if !p.cmdline.is_empty() && ui.button("Copiar linha de comando").clicked() {
+                                if !p.cmdline.is_empty() && ui.button("Copy command line").clicked() {
                                     copy = Some(p.cmdline.clone());
                                     ui.close_menu();
                                 }
                                 if !p.exe_path.is_empty() {
-                                    if ui.button("Copiar caminho").clicked() {
+                                    if ui.button("Copy path").clicked() {
                                         copy = Some(p.exe_path.clone());
                                         ui.close_menu();
                                     }
-                                    if ui.button("Abrir pasta do executável").clicked() {
+                                    if ui.button("Open executable folder").clicked() {
                                         open_folder = Some(p.exe_path.clone());
                                         ui.close_menu();
                                     }
@@ -2286,7 +2578,7 @@ impl App {
         }
         if let Some(s) = copy {
             ui.ctx().copy_text(s);
-            self.toast("Copiado".into(), false);
+            self.toast("Copied".into(), false);
         }
         if let Some(path) = open_folder {
             open_in_explorer(&path);
@@ -2306,13 +2598,13 @@ impl App {
             if hw.sensors.is_empty() {
                 ui.vertical_centered(|ui| {
                     ui.add_space(40.0);
-                    ui.label(RichText::new("Sem leitura de sensores").strong().size(15.0));
+                    ui.label(RichText::new("No sensor readings").strong().size(15.0));
                     let why = if !cfg!(windows) {
-                        "A visão Térmico ainda é só Windows: depende do helper hwtemp.exe (LibreHardwareMonitorLib)."
+                        "The Thermal view is Windows-only: it depends on the hwtemp.exe helper (LibreHardwareMonitorLib)."
                     } else if cmd.is_none() {
-                        "hwtemp.exe não foi achado ao lado do ramdog.exe — reinstale com o helper junto."
+                        "hwtemp.exe was not found next to ramdog.exe — reinstall with the helper included."
                     } else {
-                        "O helper subiu mas ainda não reportou. Se persistir: .NET 8 Desktop Runtime ausente, ou placa-mãe sem Super I/O suportado pela LibreHardwareMonitor."
+                        "The helper started but has not reported yet. If this persists: .NET 8 Desktop Runtime may be missing, or the motherboard has no Super I/O supported by LibreHardwareMonitor."
                     };
                     ui.label(RichText::new(why).color(MUTED));
                 });
@@ -2352,10 +2644,10 @@ impl App {
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("CONTROLE DE FANS").strong().color(ACCENT).size(11.0));
+                            ui.label(RichText::new("FAN CONTROL").strong().color(ACCENT).size(11.0));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 ui.label(
-                                    RichText::new("arraste ou digite % · Auto = BIOS · proteção no modo manual: ≥80°C força 100%, solta abaixo de 72°C")
+                                    RichText::new("drag or type % · Auto = BIOS · manual protection: ≥80°C forces 100%, releases below 72°C")
                                         .color(MUTED)
                                         .size(11.0),
                                 );
@@ -2367,12 +2659,12 @@ impl App {
                             ui.vertical(|ui| {
                                 ui.set_width(286.0);
                                 let (label, bg, fg) = if !stab_on {
-                                    ("ESTABILIZAR  ·  travar fans em 50%".to_owned(), ACCENT_BG, ACCENT)
+                                    ("STABILIZE  ·  lock fans at 50%".to_owned(), ACCENT_BG, ACCENT)
                                 } else if stab.held > 50.5 {
-                                    let tag = if cpu >= 95.0 { "teto térmico" } else { "rampa linear" };
-                                    (format!("FANS EM {:.0}%  ·  CPU {cpu:.0}°C ({tag})", stab.held), THERM_WARN_BG, THERM_WARN_FG)
+                                    let tag = if cpu >= 95.0 { "thermal ceiling" } else { "linear ramp" };
+                                    (format!("FANS AT {:.0}%  ·  CPU {cpu:.0}°C ({tag})", stab.held), THERM_WARN_BG, THERM_WARN_FG)
                                 } else {
-                                    (format!("FANS TRAVADOS EM 50%  ·  CPU {cpu:.0}°C"), THERM_STAB_BG, THERM_STAB_FG)
+                                    (format!("FANS LOCKED AT 50%  ·  CPU {cpu:.0}°C"), THERM_STAB_BG, THERM_STAB_FG)
                                 };
                                 let btn = egui::Button::new(RichText::new(label).strong().size(13.5).color(fg))
                                     .fill(bg)
@@ -2380,7 +2672,7 @@ impl App {
                                     .corner_radius(6.0)
                                     .min_size(Vec2::new(ui.available_width(), 34.0));
                                 let resp = ui.add(btn).on_hover_text(
-                                    "Liga/desliga a curva do TempHUD. Só fans SuperIO da placa-mãe — GPU fica no zero-fan dela. Clicar de novo (ou fechar o app) devolve tudo à BIOS.",
+                                    "Enable/disable the TempHUD curve. Only motherboard Super I/O fans — the GPU keeps its own zero-fan control. Click again (or close the app) to return everything to the BIOS.",
                                 );
                                 if resp.clicked() {
                                     self.toggle_stab();
@@ -2389,7 +2681,7 @@ impl App {
                                 Self::thermal_curve(ui);
                                 ui.add_space(2.0);
                                 ui.label(
-                                    RichText::new("50% até 80°C, rampa linear até 100% aos 92°C, teto imediato a 95°C. Sobe/desce no máx. 3%/s. Soltar devolve tudo à BIOS.")
+                                    RichText::new("50% up to 80°C, linear ramp to 100% at 92°C, immediate ceiling at 95°C. Changes by at most 3%/s. Releasing returns everything to the BIOS.")
                                         .color(MUTED)
                                         .size(11.0),
                                 );
@@ -2451,7 +2743,7 @@ impl App {
                                             let rpm_text = f.rpm.map(|r| format!("{r:>5.0} RPM")).unwrap_or_else(|| "    – RPM".into());
                                             let r = ui.label(num(rpm_text).color(rpm_color));
                                             if f.guard {
-                                                r.on_hover_text("Proteção térmica: CPU ≥80°C — 100% forçado sobre o % manual até esfriar (72°C).");
+                                                r.on_hover_text("Thermal protection: CPU ≥80°C — 100% forced over the manual setting until it cools (72°C).");
                                             }
                                             let mut auto = f.auto;
                                             if ui.add_enabled(!stab_on, egui::Checkbox::new(&mut auto, "Auto")).changed() {
@@ -2474,9 +2766,9 @@ impl App {
             } else if cfg!(windows) {
                 ui.add_space(14.0);
                 let why = if self.is_admin {
-                    "Sem controles de fan: a placa-mãe não expôs Super I/O suportado pela LibreHardwareMonitor."
+                    "No fan controls: the motherboard did not expose Super I/O supported by LibreHardwareMonitor."
                 } else {
-                    "Sem controles de fan: rode elevado (botão \"Reabrir como admin\" no topo) — o driver de sensores não sobe sem isso."
+                    "No fan controls: run elevated (the \"Reopen as administrator\" button at the top) — the sensor driver will not start without it."
                 };
                 ui.label(RichText::new(why).color(MUTED));
             }
@@ -2502,8 +2794,17 @@ impl App {
                     .copied();
                 if let Some(h) = hero {
                     let n_temps = rows.iter().filter(|s| s.kind == "temp").count();
-                    ui.label(num(format!("{:.1} °C", h.value)).size(24.0).strong().color(Self::temp_color(h.value.round() as u32)));
-                    let sub = if n_temps > 1 { format!("{} · sensor mais quente", h.name) } else { h.name.clone() };
+                    ui.label(
+                        num(format!("{:.1} °C", h.value))
+                            .size(24.0)
+                            .strong()
+                            .color(Self::temp_color(h.value.round() as u32)),
+                    );
+                    let sub = if n_temps > 1 {
+                        format!("{} · hottest sensor", h.name)
+                    } else {
+                        h.name.clone()
+                    };
                     ui.label(RichText::new(sub).color(MUTED).size(11.0));
                     ui.add_space(3.0);
                 }
@@ -2512,9 +2813,15 @@ impl App {
                         continue;
                     }
                     let (text, color) = match s.kind.as_str() {
-                        "temp" => (format!("{:>5.1} °C", s.value), Self::temp_color(s.value.round() as u32)),
+                        "temp" => (
+                            format!("{:>5.1} °C", s.value),
+                            Self::temp_color(s.value.round() as u32),
+                        ),
                         "rpm" => (format!("{:>5.0} RPM", s.value), MUTED),
-                        _ => (format!("{:>5.1} %", s.value), Self::load_color(s.value / 100.0)),
+                        _ => (
+                            format!("{:>5.1} %", s.value),
+                            Self::load_color(s.value / 100.0),
+                        ),
                     };
                     let is_load = !matches!(s.kind.as_str(), "temp" | "rpm");
                     ui.horizontal(|ui| {
@@ -2522,7 +2829,10 @@ impl App {
                         let avail = ui.available_width();
                         ui.scope(|ui| {
                             ui.set_width((avail - 148.0).max(40.0));
-                            ui.add(egui::Label::new(RichText::new(&s.name).color(MUTED).size(12.0)).truncate());
+                            ui.add(
+                                egui::Label::new(RichText::new(&s.name).color(MUTED).size(12.0))
+                                    .truncate(),
+                            );
                         });
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.label(num(text).color(color));
@@ -2557,18 +2867,57 @@ impl App {
         let yax = rect.top() + 68.0;
         let x80 = x0 + (x1 - x0) * 0.55;
         let x92 = x0 + (x1 - x0) * 0.82;
-        p.line_segment([egui::pos2(x0, rect.top() + 6.0), egui::pos2(x0, yax)], Stroke::new(1.0_f32, LINE));
-        p.line_segment([egui::pos2(x0, yax), egui::pos2(x1, yax)], Stroke::new(1.0_f32, LINE));
-        p.line_segment([egui::pos2(x0, y50), egui::pos2(x80, y50)], Stroke::new(2.0_f32, ACCENT));
-        p.line_segment([egui::pos2(x80, y50), egui::pos2(x92, y100)], Stroke::new(2.0_f32, ACCENT));
-        p.line_segment([egui::pos2(x92, y100), egui::pos2(x1, y100)], Stroke::new(2.0_f32, ACCENT));
+        p.line_segment(
+            [egui::pos2(x0, rect.top() + 6.0), egui::pos2(x0, yax)],
+            Stroke::new(1.0_f32, LINE),
+        );
+        p.line_segment(
+            [egui::pos2(x0, yax), egui::pos2(x1, yax)],
+            Stroke::new(1.0_f32, LINE),
+        );
+        p.line_segment(
+            [egui::pos2(x0, y50), egui::pos2(x80, y50)],
+            Stroke::new(2.0_f32, ACCENT),
+        );
+        p.line_segment(
+            [egui::pos2(x80, y50), egui::pos2(x92, y100)],
+            Stroke::new(2.0_f32, ACCENT),
+        );
+        p.line_segment(
+            [egui::pos2(x92, y100), egui::pos2(x1, y100)],
+            Stroke::new(2.0_f32, ACCENT),
+        );
         p.circle_filled(egui::pos2(x80, y50), 3.0, ACCENT);
         p.circle_filled(egui::pos2(x92, y100), 3.0, Color32::from_rgb(226, 166, 72));
         let font = egui::FontId::monospace(9.5);
-        p.text(egui::pos2(x0 - 4.0, y50), egui::Align2::RIGHT_CENTER, "50%", font.clone(), MUTED);
-        p.text(egui::pos2(x0 - 4.0, y100), egui::Align2::RIGHT_CENTER, "100%", font.clone(), MUTED);
-        p.text(egui::pos2(x80, yax + 4.0), egui::Align2::CENTER_TOP, "80°C", font.clone(), MUTED);
-        p.text(egui::pos2(x92, yax + 4.0), egui::Align2::CENTER_TOP, "92°C", font, MUTED);
+        p.text(
+            egui::pos2(x0 - 4.0, y50),
+            egui::Align2::RIGHT_CENTER,
+            "50%",
+            font.clone(),
+            MUTED,
+        );
+        p.text(
+            egui::pos2(x0 - 4.0, y100),
+            egui::Align2::RIGHT_CENTER,
+            "100%",
+            font.clone(),
+            MUTED,
+        );
+        p.text(
+            egui::pos2(x80, yax + 4.0),
+            egui::Align2::CENTER_TOP,
+            "80°C",
+            font.clone(),
+            MUTED,
+        );
+        p.text(
+            egui::pos2(x92, yax + 4.0),
+            egui::Align2::CENTER_TOP,
+            "92°C",
+            font,
+            MUTED,
+        );
     }
 
     fn ui_details(&mut self, ui: &mut egui::Ui) {
@@ -2580,23 +2929,36 @@ impl App {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
-                ui.label(RichText::new("Maiores agora").color(MUTED).size(11.5));
+                ui.label(RichText::new("Top processes now").color(MUTED).size(11.5));
                 for p in top.iter().take(4) {
                     let cat = self.cat(p.pid);
                     ui.add_space(6.0);
                     ui.label(RichText::new("●").color(cat.color()).size(10.0));
                     ui.label(RichText::new(&p.name).size(12.0));
-                    ui.label(num(fmt_bytes(Self::metric_of(m, p))).color(ram_color(Self::metric_of(m, p), MUTED)));
+                    ui.label(
+                        num(fmt_bytes(Self::metric_of(m, p)))
+                            .color(ram_color(Self::metric_of(m, p), MUTED)),
+                    );
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.add_space(10.0);
-                    ui.label(RichText::new("clique numa linha para ver origem e ações · botão direito abre o menu").color(MUTED).size(11.0));
+                    ui.label(
+                        RichText::new(
+                            "click a row for origin and actions · right-click for the menu",
+                        )
+                        .color(MUTED)
+                        .size(11.0),
+                    );
                 });
             });
             return;
         };
         let alive = self.proc(sel).cloned();
-        let Some((p, cat)) = alive.clone().map(|p| (p, self.cat(sel))).or_else(|| self.selected_keep.clone()) else {
+        let Some((p, cat)) = alive
+            .clone()
+            .map(|p| (p, self.cat(sel)))
+            .or_else(|| self.selected_keep.clone())
+        else {
             self.selected = None;
             return;
         };
@@ -2619,30 +2981,69 @@ impl App {
             ui.label(RichText::new(format!("PID {}", p.pid)).monospace().weak());
             ui.label(RichText::new(format!("● {}", cat.label())).color(cat.color()));
             if locked {
-                ui.label(RichText::new(if critical { "🔒 crítico" } else { "🔒 protegido" }).color(Color32::from_rgb(120, 200, 255)));
+                ui.label(
+                    RichText::new(if critical {
+                        "🔒 critical"
+                    } else {
+                        "🔒 protected"
+                    })
+                    .color(Color32::from_rgb(120, 200, 255)),
+                );
             }
             if alive.is_none() {
-                ui.label(RichText::new("(encerrado)").color(Color32::from_rgb(235, 90, 90)).strong());
+                ui.label(
+                    RichText::new("(exited)")
+                        .color(Color32::from_rgb(235, 90, 90))
+                        .strong(),
+                );
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if alive.is_some() {
                     if !locked {
-                        if ui.add(egui::Button::new(RichText::new("✖ Finalizar").color(Color32::WHITE)).fill(Color32::from_rgb(170, 50, 50))).clicked() {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("✖ Terminate").color(Color32::WHITE),
+                                )
+                                .fill(Color32::from_rgb(170, 50, 50)),
+                            )
+                            .clicked()
+                        {
                             kill = Some((p.pid, false));
                         }
                         let n = self.subtree_count.get(&p.pid).copied().unwrap_or(1);
                         if n > 1
                             && ui
-                                .add(egui::Button::new(RichText::new(format!("✖ Finalizar árvore ({n})")).color(Color32::WHITE)).fill(Color32::from_rgb(140, 40, 40)))
-                                .on_hover_text(format!("Encerra este processo e todos os {} descendentes — total {}", n - 1, fmt_bytes(self.subtree.get(&p.pid).copied().unwrap_or(0))))
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new(format!("✖ Terminate tree ({n})"))
+                                            .color(Color32::WHITE),
+                                    )
+                                    .fill(Color32::from_rgb(140, 40, 40)),
+                                )
+                                .on_hover_text(format!(
+                                    "Terminates this process and all {} descendants — total {}",
+                                    n - 1,
+                                    fmt_bytes(self.subtree.get(&p.pid).copied().unwrap_or(0))
+                                ))
                                 .clicked()
                         {
                             kill = Some((p.pid, true));
                         }
                     }
                     if !critical {
-                        let lt = if locked { "🔓 Desproteger" } else { "🔒 Proteger" };
-                        if ui.button(lt).on_hover_text("Lock por nome de executável: vale para todas as instâncias e persiste").clicked() {
+                        let lt = if locked {
+                            "🔓 Unlock"
+                        } else {
+                            "🔒 Protect"
+                        };
+                        if ui
+                            .button(lt)
+                            .on_hover_text(
+                                "Lock by executable name: applies to all instances and persists",
+                            )
+                            .clicked()
+                        {
                             lock = Some(p.name_lower.clone());
                         }
                     }
@@ -2654,16 +3055,25 @@ impl App {
                     .width(120.0)
                     .show_ui(ui, |ui| {
                         for c in Category::ALL {
-                            ui.selectable_value(&mut chosen, c, RichText::new(c.label()).color(c.color()));
+                            ui.selectable_value(
+                                &mut chosen,
+                                c,
+                                RichText::new(c.label()).color(c.color()),
+                            );
                         }
                     });
                 if chosen != cat {
                     set_cat = Some((p.name_lower.clone(), Some(chosen)));
                 }
-                if overridden && ui.small_button("auto").on_hover_text("Voltar para a regra automática").clicked() {
+                if overridden
+                    && ui
+                        .small_button("auto")
+                        .on_hover_text("Return to the automatic rule")
+                        .clicked()
+                {
                     set_cat = Some((p.name_lower.clone(), None));
                 }
-                ui.label(RichText::new("Categoria:").weak());
+                ui.label(RichText::new("Category:").weak());
             });
         });
         // Fora do closure: a verificação precisa de `&mut self` e dispara a thread na
@@ -2674,7 +3084,7 @@ impl App {
             egui::Grid::new("details_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
                 // "O que é isso" vem antes de tudo: é a pergunta que faz alguém abrir o painel.
                 if let Some(k) = knowledge::lookup(&p.name_lower) {
-                    ui.label(RichText::new("O que é").weak());
+                    ui.label(RichText::new("What it is").weak());
                     ui.vertical(|ui| {
                         ui.add(egui::Label::new(RichText::new(k.what).size(12.5)).wrap());
                         ui.horizontal_wrapped(|ui| {
@@ -2694,7 +3104,7 @@ impl App {
 
                 let svcs = self.services_of(p.pid);
                 if !svcs.is_empty() {
-                    ui.label(RichText::new("Serviços").weak());
+                    ui.label(RichText::new("Services").weak());
                     ui.vertical(|ui| {
                         // Um svchost pode hospedar uma dúzia: os primeiros bastam para
                         // identificar, o resto fica atrás do expansor para não poluir.
@@ -2706,7 +3116,7 @@ impl App {
                             });
                         }
                         if svcs.len() > 3 {
-                            egui::CollapsingHeader::new(format!("mais {} serviço(s)", svcs.len() - 3))
+                            egui::CollapsingHeader::new(format!("{} more service(s)", svcs.len() - 3))
                                 .id_salt("more_svcs")
                                 .show(ui, |ui| {
                                     for (name, display) in svcs.iter().skip(3) {
@@ -2722,7 +3132,7 @@ impl App {
                     ui.end_row();
                 }
 
-                ui.label(RichText::new("Origem").weak());
+                ui.label(RichText::new("Origin").weak());
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let chain = self.ancestry(p.pid);
@@ -2732,20 +3142,20 @@ impl App {
                             match self.seen_names.get(&p.raw_ppid) {
                                 Some(n) => {
                                     ui.label(RichText::new(format!("{n} (PID {})", p.raw_ppid)).strong());
-                                    ui.label(RichText::new("— já encerrado").weak());
+                                    ui.label(RichText::new("— already exited").weak());
                                 }
                                 None => {
-                                    ui.label(RichText::new(format!("pai (PID {}) já encerrado", p.raw_ppid)).weak());
+                                    ui.label(RichText::new(format!("parent (PID {}) already exited", p.raw_ppid)).weak());
                                 }
                             }
                         } else {
-                            ui.label(RichText::new("sem pai conhecido").weak());
+                            ui.label(RichText::new("no known parent").weak());
                         }
                     }
                     for a in chain {
                         if let Some(ap) = self.proc(a) {
                             let r = ui.add(egui::Label::new(RichText::new(format!("{} ({})", ap.name, ap.pid)).color(self.cat(a).color())).sense(egui::Sense::click()));
-                            if r.on_hover_text("Selecionar").clicked() {
+                            if r.on_hover_text("Select").clicked() {
                                 goto = Some(a);
                             }
                             ui.label(RichText::new("›").weak());
@@ -2756,7 +3166,7 @@ impl App {
                 ui.end_row();
 
                 if !p.launcher.is_empty() {
-                    ui.label(RichText::new("Lançado por").weak());
+                    ui.label(RichText::new("Launched by").weak());
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         let l = &p.launcher;
@@ -2764,37 +3174,37 @@ impl App {
                         if let Some(a) = &l.agent {
                             let mut txt = a.clone();
                             if let Some(sid) = &l.session {
-                                txt.push_str(&format!(" (sessão {sid})"));
+                                txt.push_str(&format!(" (session {sid})"));
                             }
                             ui.label(RichText::new(txt).color(purple).strong());
                             match l.agent_pid {
                                 Some(apid) => match self.proc(apid) {
                                     Some(ap) => {
                                         let r = ui.add(egui::Label::new(RichText::new(format!("→ {} ({})", ap.name, apid)).color(self.cat(apid).color())).sense(egui::Sense::click()));
-                                        if r.on_hover_text("Selecionar o processo do agente").clicked() {
+                                        if r.on_hover_text("Select the agent process").clicked() {
                                             goto = Some(apid);
                                         }
                                     }
-                                    None => { ui.label(RichText::new(format!("→ PID {apid} (já encerrado)")).weak()); }
+                                    None => { ui.label(RichText::new(format!("→ PID {apid} (already exited)")).weak()); }
                                 },
                                 None => {}
                             }
                         }
                         if let Some(h) = &l.host {
-                            ui.label(RichText::new(format!("{}em {}", if l.agent.is_some() { "· " } else { "" }, h)).color(purple));
+                            ui.label(RichText::new(format!("{}in {}", if l.agent.is_some() { "· " } else { "" }, h)).color(purple));
                         }
                         if let Some(cwd) = &l.init_cwd {
                             let script = l.npm_script.clone().map(|x| format!("npm run {x} ")).unwrap_or_default();
-                            ui.label(RichText::new(format!("· {script}em {cwd}")).monospace().small().weak());
+                            ui.label(RichText::new(format!("· {script}in {cwd}")).monospace().small().weak());
                         }
-                        ui.label(RichText::new("(via variáveis de ambiente herdadas)").weak().small());
+                        ui.label(RichText::new("(via inherited environment variables)").weak().small());
                     });
                     ui.end_row();
                 }
 
-                ui.label(RichText::new("Executável").weak());
+                ui.label(RichText::new("Executable").weak());
                 ui.vertical(|ui| {
-                    ui.add(egui::Label::new(RichText::new(if p.exe_path.is_empty() { "(sem acesso)" } else { &p.exe_path }).monospace().small()).wrap());
+                    ui.add(egui::Label::new(RichText::new(if p.exe_path.is_empty() { "(unavailable)" } else { &p.exe_path }).monospace().small()).wrap());
                     // Sem isto não há como distinguir o wininit.exe verdadeiro de um
                     // impostor de mesmo nome numa pasta qualquer.
                     match sig.as_ref() {
@@ -2803,17 +3213,17 @@ impl App {
                                 .on_hover_text(s.tip());
                         }
                         None => {
-                            ui.label(RichText::new("verificando assinatura…").weak().size(11.5));
+                            ui.label(RichText::new("checking signature…").weak().size(11.5));
                         }
                     }
                 });
                 ui.end_row();
 
-                ui.label(RichText::new("Comando").weak());
-                ui.add(egui::Label::new(RichText::new(if p.cmdline.is_empty() { "(sem acesso)" } else { &p.cmdline }).monospace().small()).wrap());
+                ui.label(RichText::new("Command").weak());
+                ui.add(egui::Label::new(RichText::new(if p.cmdline.is_empty() { "(unavailable)" } else { &p.cmdline }).monospace().small()).wrap());
                 ui.end_row();
 
-                ui.label(RichText::new("Memória").weak());
+                ui.label(RichText::new("Memory").weak());
                 // Próprio e subárvore em linhas separadas e rotuladas: ler "wininit 5,12 GB"
                 // e concluir que o wininit é o vilão é o mal-entendido nº 1 da visão de árvore.
                 // Ele usa 8 MB; os 5 GB são dos filhos.
@@ -2822,11 +3232,11 @@ impl App {
                 ui.vertical(|ui| {
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing.x = 5.0;
-                        ui.label(RichText::new("deste processo:").weak().size(11.5));
+                        ui.label(RichText::new("this process:").weak().size(11.5));
                         ui.label(RichText::new(fmt_bytes(p.working_set)).strong());
                         ui.label(
                             RichText::new(format!(
-                                "(privada {} · commit {})",
+                                "(private {} · commit {})",
                                 fmt_bytes(p.private_ws),
                                 fmt_bytes(p.commit)
                             ))
@@ -2837,18 +3247,18 @@ impl App {
                     if n > 1 {
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing.x = 5.0;
-                            ui.label(RichText::new("com os filhos:").weak().size(11.5));
+                            ui.label(RichText::new("with children:").weak().size(11.5));
                             ui.label(RichText::new(fmt_bytes(sub)).strong().color(Color32::from_rgb(230, 190, 80)));
-                            ui.label(RichText::new(format!("em {n} processos")).weak().size(11.5))
-                                .on_hover_text("É este o número que a coluna RAM mostra na visão de árvore — a soma da subárvore, não o consumo deste processo.");
+                            ui.label(RichText::new(format!("in {n} processes")).weak().size(11.5))
+                                .on_hover_text("This is the number shown in the tree view RAM column — the subtree sum, not this process's usage.");
                         });
                     }
                 });
                 ui.end_row();
 
-                ui.label(RichText::new("Execução").weak());
+                ui.label(RichText::new("Runtime").weak());
                 ui.label(format!(
-                    "iniciado há {}   ·   CPU {:.1}%   ·   {} threads   ·   {} handles   ·   sessão {}",
+                    "started {} ago   ·   CPU {:.1}%   ·   {} threads   ·   {} handles   ·   session {}",
                     fmt_age(secs),
                     p.cpu_pct,
                     p.threads,
@@ -2876,15 +3286,22 @@ impl App {
     }
 
     fn ui_modal(&mut self, ctx: &egui::Context) {
-        let Some(req) = self.pending.as_ref() else { return };
+        let Some(req) = self.pending.as_ref() else {
+            return;
+        };
         let title = req.title.clone();
-        let list: Vec<String> = req.pids.iter().take(12).map(|(pid, name, ram)| format!("{name}  ({pid})  {}", fmt_bytes(*ram))).collect();
+        let list: Vec<String> = req
+            .pids
+            .iter()
+            .take(12)
+            .map(|(pid, name, ram)| format!("{name}  ({pid})  {}", fmt_bytes(*ram)))
+            .collect();
         let more = req.pids.len().saturating_sub(12);
         let mut confirm = false;
         let mut cancel = false;
         let modal = egui::Modal::new(egui::Id::new("kill_modal")).show(ctx, |ui| {
             ui.set_width(440.0);
-            ui.heading("Confirmar encerramento");
+            ui.heading("Confirm termination");
             ui.add_space(6.0);
             ui.label(&title);
             if list.len() > 1 {
@@ -2894,19 +3311,25 @@ impl App {
                         ui.label(RichText::new(l).monospace().small());
                     }
                     if more > 0 {
-                        ui.label(RichText::new(format!("… e mais {more}")).weak());
+                        ui.label(RichText::new(format!("… and {more} more")).weak());
                     }
                 });
             }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(RichText::new("Finalizar").color(Color32::WHITE)).fill(Color32::from_rgb(170, 50, 50))).clicked() {
+                if ui
+                    .add(
+                        egui::Button::new(RichText::new("Terminate").color(Color32::WHITE))
+                            .fill(Color32::from_rgb(170, 50, 50)),
+                    )
+                    .clicked()
+                {
                     confirm = true;
                 }
-                if ui.button("Cancelar").clicked() {
+                if ui.button("Cancel").clicked() {
                     cancel = true;
                 }
-                ui.label(RichText::new("Enter confirma · Esc cancela").weak().small());
+                ui.label(RichText::new("Enter confirms · Esc cancels").weak().small());
             });
         });
         if modal.should_close() {
@@ -2941,57 +3364,81 @@ impl App {
         // "Medido" = privado dos processos + os dois pools, cada um lido de uma API. O resto
         // é um subtraendo, e o rótulo diz isso — chamá-lo de "atribuído" fingiria uma
         // medição que não existe, que é justamente o vício do Gerenciador de Tarefas.
-        let measured = b.private.saturating_add(b.paged_pool).saturating_add(b.nonpaged_pool);
+        let measured = b
+            .private
+            .saturating_add(b.paged_pool)
+            .saturating_add(b.nonpaged_pool);
         let overflow = measured > b.used;
-        let color = if b.kernel_ok && !overflow { MUTED } else { Color32::from_rgb(200, 150, 90) };
+        let color = if b.kernel_ok && !overflow {
+            MUTED
+        } else {
+            Color32::from_rgb(200, 150, 90)
+        };
         let head = if b.shared_and_cache > 0 {
             format!(
-                "RAM {}: {} medidos + {} por diferença",
+                "RAM {}: {} measured + {} by difference",
                 fmt_gb(b.used),
                 fmt_gb(measured),
                 fmt_gb(b.shared_and_cache)
             )
         } else {
-            format!("RAM {}: {} medidos", fmt_gb(b.used), fmt_gb(measured.min(b.used)))
+            format!(
+                "RAM {}: {} measured",
+                fmt_gb(b.used),
+                fmt_gb(measured.min(b.used))
+            )
         };
         let mut tip = format!(
-            "Composição dos {} em uso, sempre em memória privada — a única base que não conta \
-             a mesma página física duas vezes:\n\n\
-             Processos (privado)  {}\n",
+            "Composition of the {} in use, always using private memory — the only basis that \
+             does not count the same physical page twice:\n\n\
+             Processes (private)  {}\n",
             fmt_gb(b.used),
             fmt_bytes_short(b.private)
         );
         if b.kernel_ok {
-            tip.push_str(&format!("{}  {}\n", SysRow::PagedPool.label(), fmt_bytes_short(b.paged_pool)));
-            tip.push_str(&format!("{}  {}\n", SysRow::NonPagedPool.label(), fmt_bytes_short(b.nonpaged_pool)));
+            tip.push_str(&format!(
+                "{}  {}\n",
+                SysRow::PagedPool.label(),
+                fmt_bytes_short(b.paged_pool)
+            ));
+            tip.push_str(&format!(
+                "{}  {}\n",
+                SysRow::NonPagedPool.label(),
+                fmt_bytes_short(b.nonpaged_pool)
+            ));
         } else {
-            tip.push_str("Pools do kernel: indisponíveis (GetPerformanceInfo falhou)\n");
+            tip.push_str("Kernel pools: unavailable (GetPerformanceInfo failed)\n");
         }
-        tip.push_str(&format!("{}  {}\n", SysRow::SharedAndCache.label(), fmt_bytes_short(b.shared_and_cache)));
+        tip.push_str(&format!(
+            "{}  {}\n",
+            SysRow::SharedAndCache.label(),
+            fmt_bytes_short(b.shared_and_cache)
+        ));
         if overflow {
             tip.push_str(
-                "\nAs parcelas medidas já passam do total em uso: o pool paginado inclui a \
-                 fração que está no disco, e os processos são amostrados num instante \
-                 diferente da leitura de memória. O resto foi zerado em vez de negativado.\n",
+                "\nThe measured parts already exceed total usage: the paged pool includes the \
+                 portion on disk, and processes are sampled at a different instant than the \
+                 memory reading. The remainder was clamped to zero instead of shown as negative.\n",
             );
         }
         if self.cfg.mem_metric != MemMetric::Private {
             let shown: u64 = self.procs.iter().map(|p| self.mem_of(p)).sum();
             tip.push_str(&format!(
-                "\nA coluna RAM está em {} e soma {} — acima do privado porque cada página \
-                 compartilhada conta em todo processo que a mapeia.",
+                "\nThe RAM column is set to {} and sums {} — above private memory because each \
+                 shared page counts in every process that maps it.",
                 self.cfg.mem_metric.label().to_lowercase(),
                 fmt_bytes_short(shown)
             ));
         }
-        ui.label(RichText::new(head).color(color).small()).on_hover_text(tip);
+        ui.label(RichText::new(head).color(color).small())
+            .on_hover_text(tip);
     }
 
     fn save_cfg_if_dirty(&mut self) {
         if self.cfg_dirty {
             self.cfg_dirty = false;
             if let Err(e) = self.cfg.save() {
-                self.toast(format!("Falha ao salvar config: {e}"), true);
+                self.toast(format!("Failed to save config: {e}"), true);
             }
         }
     }
@@ -3007,7 +3454,11 @@ impl App {
                 .anchor(egui::Align2::RIGHT_TOP, [-12.0, 64.0])
                 .order(egui::Order::Foreground)
                 .show(ctx, |ui| {
-                    let bg = if err { Color32::from_rgb(120, 40, 40) } else { Color32::from_rgb(40, 100, 60) };
+                    let bg = if err {
+                        Color32::from_rgb(120, 40, 40)
+                    } else {
+                        Color32::from_rgb(40, 100, 60)
+                    };
                     egui::Frame::popup(ui.style()).fill(bg).show(ui, |ui| {
                         ui.label(RichText::new(msg).color(Color32::WHITE));
                     });
@@ -3057,7 +3508,10 @@ impl eframe::App for App {
         }
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| self.ui_top(ui));
-        if self.cfg.view != ViewMode::Drains && self.cfg.view != ViewMode::Thermal && self.cfg.view != ViewMode::Boot {
+        if self.cfg.view != ViewMode::Drains
+            && self.cfg.view != ViewMode::Thermal
+            && self.cfg.view != ViewMode::Boot
+        {
             egui::TopBottomPanel::bottom("details")
                 .resizable(true)
                 .default_height(150.0)
@@ -3067,27 +3521,30 @@ impl eframe::App for App {
         egui::TopBottomPanel::bottom("statusbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let shown = self.procs.iter().filter(|p| self.passes(p, &self.search.trim().to_lowercase())).count();
-                ui.label(RichText::new(format!("{} processos ({} exibidos)", self.procs.len(), shown)).weak().small());
+                ui.label(RichText::new(format!("{} processes ({} shown)", self.procs.len(), shown)).weak().small());
                 ui.separator();
                 let locked_n = self.cfg.locked.len();
-                ui.label(RichText::new(format!("{locked_n} protegidos")).weak().small())
+                ui.label(RichText::new(format!("{locked_n} protected")).weak().small())
                     .on_hover_text(self.cfg.locked.iter().cloned().collect::<Vec<_>>().join("\n"));
                 ui.separator();
-                ui.label(RichText::new(format!("amostra {:.0} ms", self.sample_ms)).weak().small());
+                ui.label(RichText::new(format!("sample {:.0} ms", self.sample_ms)).weak().small());
                 ui.separator();
                 self.ui_accounting(ui);
                 if self.order_frozen {
                     ui.separator();
-                    ui.label(RichText::new("ordem congelada (mouse sobre a tabela)").weak().small())
-                        .on_hover_text("Enquanto o mouse está sobre a tabela a ordem das linhas não muda, para você não clicar no processo errado. Valores continuam atualizando.");
+                    ui.label(RichText::new("order frozen (mouse over table)").weak().small())
+                        .on_hover_text("While the mouse is over the table, row order does not change so you cannot click the wrong process. Values keep updating.");
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(RichText::new("Del: finalizar · Shift+Del: árvore · F5: atualizar · botão direito: menu").weak().small());
+                    ui.label(RichText::new("Del: terminate · Shift+Del: tree · F5: refresh · right-click: menu").weak().small());
                 });
             });
         });
         egui::CentralPanel::default()
-            .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(egui::Margin::symmetric(6, 2)))
+            .frame(
+                egui::Frame::central_panel(&ctx.style())
+                    .inner_margin(egui::Margin::symmetric(6, 2)),
+            )
             .show(ctx, |ui| {
                 if self.cfg.view == ViewMode::Drains {
                     let is_admin = self.is_admin;
@@ -3100,12 +3557,23 @@ impl eframe::App for App {
                             DrainOut::Kill(pids) => {
                                 let list: Vec<(u32, String, u64)> = pids
                                     .iter()
-                                    .filter_map(|pid| self.proc(*pid).map(|p| (p.pid, p.name.clone(), self.mem_of(p))))
+                                    .filter_map(|pid| {
+                                        self.proc(*pid)
+                                            .map(|p| (p.pid, p.name.clone(), self.mem_of(p)))
+                                    })
                                     .collect();
                                 if !list.is_empty() {
-                                    let title = format!("Finalizar {} processo(s)?", list.len());
-                                    let req = KillReq { pids: list, title, tree: false };
-                                    if self.cfg.confirm_kill { self.pending = Some(req); } else { self.execute_kill(req); }
+                                    let title = format!("Terminate {} process(es)?", list.len());
+                                    let req = KillReq {
+                                        pids: list,
+                                        title,
+                                        tree: false,
+                                    };
+                                    if self.cfg.confirm_kill {
+                                        self.pending = Some(req);
+                                    } else {
+                                        self.execute_kill(req);
+                                    }
                                 }
                             }
                         }
@@ -3122,12 +3590,23 @@ impl eframe::App for App {
                             BootOut::Kill(pids) => {
                                 let list: Vec<(u32, String, u64)> = pids
                                     .iter()
-                                    .filter_map(|pid| self.proc(*pid).map(|p| (p.pid, p.name.clone(), self.mem_of(p))))
+                                    .filter_map(|pid| {
+                                        self.proc(*pid)
+                                            .map(|p| (p.pid, p.name.clone(), self.mem_of(p)))
+                                    })
                                     .collect();
                                 if !list.is_empty() {
-                                    let title = format!("Finalizar {} processo(s)?", list.len());
-                                    let req = KillReq { pids: list, title, tree: false };
-                                    if self.cfg.confirm_kill { self.pending = Some(req); } else { self.execute_kill(req); }
+                                    let title = format!("Terminate {} process(es)?", list.len());
+                                    let req = KillReq {
+                                        pids: list,
+                                        title,
+                                        tree: false,
+                                    };
+                                    if self.cfg.confirm_kill {
+                                        self.pending = Some(req);
+                                    } else {
+                                        self.execute_kill(req);
+                                    }
                                 }
                             }
                         }
@@ -3154,19 +3633,40 @@ fn setup_fonts(ctx: &egui::Context) {
     let mut defs = FontDefinitions::default();
     // Segoe UI como fonte principal (visual nativo do Windows, acentos completos)
     if let Ok(bytes) = std::fs::read(format!("{fonts_dir}segoeui.ttf")) {
-        defs.font_data.insert("segoeui".into(), std::sync::Arc::new(FontData::from_owned(bytes)));
-        defs.families.entry(FontFamily::Proportional).or_default().insert(0, "segoeui".into());
+        defs.font_data.insert(
+            "segoeui".into(),
+            std::sync::Arc::new(FontData::from_owned(bytes)),
+        );
+        defs.families
+            .entry(FontFamily::Proportional)
+            .or_default()
+            .insert(0, "segoeui".into());
     }
     // Segoe UI Symbol: ● ▶ ▼ ⏸ e afins, como fallback
     if let Ok(bytes) = std::fs::read(format!("{fonts_dir}seguisym.ttf")) {
-        defs.font_data.insert("seguisym".into(), std::sync::Arc::new(FontData::from_owned(bytes)));
-        defs.families.entry(FontFamily::Proportional).or_default().push("seguisym".into());
-        defs.families.entry(FontFamily::Monospace).or_default().push("seguisym".into());
+        defs.font_data.insert(
+            "seguisym".into(),
+            std::sync::Arc::new(FontData::from_owned(bytes)),
+        );
+        defs.families
+            .entry(FontFamily::Proportional)
+            .or_default()
+            .push("seguisym".into());
+        defs.families
+            .entry(FontFamily::Monospace)
+            .or_default()
+            .push("seguisym".into());
     }
     // Consolas para monospace (comandos/caminhos)
     if let Ok(bytes) = std::fs::read(format!("{fonts_dir}consola.ttf")) {
-        defs.font_data.insert("consolas".into(), std::sync::Arc::new(FontData::from_owned(bytes)));
-        defs.families.entry(FontFamily::Monospace).or_default().insert(0, "consolas".into());
+        defs.font_data.insert(
+            "consolas".into(),
+            std::sync::Arc::new(FontData::from_owned(bytes)),
+        );
+        defs.families
+            .entry(FontFamily::Monospace)
+            .or_default()
+            .insert(0, "consolas".into());
     }
     ctx.set_fonts(defs);
 }
@@ -3222,18 +3722,37 @@ fn setup_style(ctx: &egui::Context) {
     v.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, Color32::WHITE);
     v.widgets.open.bg_fill = SURFACE_HI;
     v.widgets.open.weak_bg_fill = SURFACE_HI;
-    for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
+    for w in [
+        &mut v.widgets.noninteractive,
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+    ] {
         w.corner_radius = 4.0.into();
     }
     v.striped = true;
     ctx.set_visuals(v);
     ctx.style_mut(|s| {
         use egui::{FontFamily, FontId, TextStyle};
-        s.text_styles.insert(TextStyle::Body, FontId::new(13.0, FontFamily::Proportional));
-        s.text_styles.insert(TextStyle::Button, FontId::new(13.0, FontFamily::Proportional));
-        s.text_styles.insert(TextStyle::Small, FontId::new(11.0, FontFamily::Proportional));
-        s.text_styles.insert(TextStyle::Monospace, FontId::new(12.0, FontFamily::Monospace));
-        s.text_styles.insert(TextStyle::Heading, FontId::new(17.0, FontFamily::Proportional));
+        s.text_styles
+            .insert(TextStyle::Body, FontId::new(13.0, FontFamily::Proportional));
+        s.text_styles.insert(
+            TextStyle::Button,
+            FontId::new(13.0, FontFamily::Proportional),
+        );
+        s.text_styles.insert(
+            TextStyle::Small,
+            FontId::new(11.0, FontFamily::Proportional),
+        );
+        s.text_styles.insert(
+            TextStyle::Monospace,
+            FontId::new(12.0, FontFamily::Monospace),
+        );
+        s.text_styles.insert(
+            TextStyle::Heading,
+            FontId::new(17.0, FontFamily::Proportional),
+        );
         s.spacing.item_spacing = egui::vec2(8.0, 4.0);
         s.spacing.button_padding = egui::vec2(8.0, 3.0);
         s.spacing.menu_margin = egui::Margin::same(8);
@@ -3252,7 +3771,11 @@ fn ui_dark() -> bool {
 }
 
 fn ui_text_color(dark: bool) -> Color32 {
-    if dark { Color32::from_gray(220) } else { Color32::from_gray(30) }
+    if dark {
+        Color32::from_gray(220)
+    } else {
+        Color32::from_gray(30)
+    }
 }
 
 fn ram_color(bytes: u64, default: Color32) -> Color32 {
@@ -3273,7 +3796,9 @@ fn exe_token_end(s: &str) -> Option<usize> {
     if b.len() < 4 {
         return None;
     }
-    (0..=b.len() - 4).find(|&i| b[i..i + 4].eq_ignore_ascii_case(b".exe")).map(|i| i + 4)
+    (0..=b.len() - 4)
+        .find(|&i| b[i..i + 4].eq_ignore_ascii_case(b".exe"))
+        .map(|i| i + 4)
 }
 
 /// A coluna de comando mostrava o caminho completo do exe e truncava antes de chegar nos
@@ -3282,7 +3807,11 @@ fn exe_token_end(s: &str) -> Option<usize> {
 fn cmd_args(p: &ProcInfo) -> String {
     let cmd = p.cmdline.trim();
     if cmd.is_empty() {
-        return if p.exe_path.is_empty() { "(sem acesso)".to_string() } else { p.exe_path.clone() };
+        return if p.exe_path.is_empty() {
+            "(unavailable)".to_string()
+        } else {
+            p.exe_path.clone()
+        };
     }
     let rest = if let Some(stripped) = cmd.strip_prefix('"') {
         match stripped.find('"') {
@@ -3312,36 +3841,36 @@ fn cmd_args(p: &ProcInfo) -> String {
 pub fn fmt_bps(bps: f64) -> String {
     let b = bps.max(0.0) as u64;
     if b >= GB {
-        format!("{} GB/s", pt_num(b as f64 / GB as f64, 2))
+        format!("{} GB/s", en_num(b as f64 / GB as f64, 2))
     } else if b >= MB {
-        format!("{} MB/s", pt_num(b as f64 / MB as f64, 1))
+        format!("{} MB/s", en_num(b as f64 / MB as f64, 1))
     } else {
-        format!("{} KB/s", pt_num(b as f64 / 1024.0, 0))
+        format!("{} KB/s", en_num(b as f64 / 1024.0, 0))
     }
 }
 
 pub fn fmt_bytes(b: u64) -> String {
     if b >= GB {
-        format!("{} GB", pt_num(b as f64 / GB as f64, 2))
+        format!("{} GB", en_num(b as f64 / GB as f64, 2))
     } else {
-        format!("{} MB", pt_num(b as f64 / MB as f64, 1))
+        format!("{} MB", en_num(b as f64 / MB as f64, 1))
     }
 }
 
 pub fn fmt_bytes_short(b: u64) -> String {
     if b >= GB {
-        format!("{} GB", pt_num(b as f64 / GB as f64, 1))
+        format!("{} GB", en_num(b as f64 / GB as f64, 1))
     } else {
-        format!("{} MB", pt_num(b as f64 / MB as f64, 0))
+        format!("{} MB", en_num(b as f64 / MB as f64, 0))
     }
 }
 
 fn fmt_gb(b: u64) -> String {
-    format!("{} GB", pt_num(b as f64 / GB as f64, 1))
+    format!("{} GB", en_num(b as f64 / GB as f64, 1))
 }
 
-/// Formata número no padrão pt-BR (1.234,5).
-fn pt_num(v: f64, decimals: usize) -> String {
+/// Format a number with English separators (1,234.5).
+fn en_num(v: f64, decimals: usize) -> String {
     let s = format!("{:.*}", decimals, v);
     let (int, frac) = match s.split_once('.') {
         Some((i, f)) => (i.to_string(), Some(f.to_string())),
@@ -3351,15 +3880,26 @@ fn pt_num(v: f64, decimals: usize) -> String {
     let digits: Vec<char> = int.chars().collect();
     for (i, c) in digits.iter().enumerate() {
         if i > 0 && (digits.len() - i) % 3 == 0 {
-            out.push('.');
+            out.push(',');
         }
         out.push(*c);
     }
     if let Some(f) = frac {
-        out.push(',');
+        out.push('.');
         out.push_str(&f);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::en_num;
+
+    #[test]
+    fn formats_english_numbers() {
+        assert_eq!(en_num(1234.5, 1), "1,234.5");
+        assert_eq!(en_num(0.5, 1), "0.5");
+    }
 }
 
 fn fmt_age(secs: u64) -> String {
@@ -3376,7 +3916,9 @@ fn fmt_age(secs: u64) -> String {
 
 pub fn open_url(url: &str) {
     #[cfg(windows)]
-    let _ = std::process::Command::new("cmd").args(["/c", "start", "", url]).spawn();
+    let _ = std::process::Command::new("cmd")
+        .args(["/c", "start", "", url])
+        .spawn();
     #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open").arg(url).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -3385,9 +3927,13 @@ pub fn open_url(url: &str) {
 
 fn open_in_explorer(path: &str) {
     #[cfg(windows)]
-    let _ = std::process::Command::new("explorer.exe").arg(format!("/select,{path}")).spawn();
+    let _ = std::process::Command::new("explorer.exe")
+        .arg(format!("/select,{path}"))
+        .spawn();
     #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").args(["-R", path]).spawn();
+    let _ = std::process::Command::new("open")
+        .args(["-R", path])
+        .spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         if let Some(dir) = std::path::Path::new(path).parent() {

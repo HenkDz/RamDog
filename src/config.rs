@@ -55,7 +55,7 @@ impl MemMetric {
     pub fn label(self) -> &'static str {
         match self {
             MemMetric::WorkingSet => "Working set",
-            MemMetric::Private => "Privado",
+            MemMetric::Private => "Private",
             MemMetric::Commit => "Commit",
         }
     }
@@ -64,7 +64,7 @@ impl MemMetric {
     pub fn short(self) -> &'static str {
         match self {
             MemMetric::WorkingSet => "RAM",
-            MemMetric::Private => "RAM priv.",
+            MemMetric::Private => "Private RAM",
             MemMetric::Commit => "Commit",
         }
     }
@@ -72,19 +72,19 @@ impl MemMetric {
     pub fn tip(self) -> &'static str {
         match self {
             MemMetric::WorkingSet => concat!(
-                "RAM física ocupada agora, incluindo páginas compartilhadas (DLLs, memória ",
-                "compartilhada, arquivos mapeados). É o número certo para decidir quem encerrar.\n\n",
-                "Uma DLL de 50 MB mapeada em 30 processos conta nos 30, então a soma da coluna ",
-                "fica acima do total em uso — a conferência do rodapé usa o privado por isso."
+                "Physical RAM currently occupied, including shared pages (DLLs, shared memory, ",
+                "mapped files). This is the right number for deciding what to terminate.\n\n",
+                "A 50 MB DLL mapped into 30 processes counts in all 30, so the column total can ",
+                "exceed total usage — the footer uses private memory for reconciliation."
             ),
             MemMetric::Private => concat!(
-                "Só a memória exclusiva do processo — é a coluna do Gerenciador de Tarefas.\n\n",
-                "Exclui DLLs e memória compartilhada, então subestima muito processos como ",
-                "Chrome/Electron. Em compensação é a única base que soma sem duplicar nada."
+                "Only memory exclusive to the process — this is Task Manager's column.\n\n",
+                "It excludes DLLs and shared memory, so it greatly understates processes such as ",
+                "Chrome/Electron. In return, it is the only basis that sums without duplication."
             ),
             MemMetric::Commit => concat!(
-                "Memória confirmada: o que o processo reservou, esteja na RAM ou no arquivo de ",
-                "paginação.\n\nAntecipa pressão de memória, mas não diz o que está na RAM agora."
+                "Committed memory: what the process reserved, whether in RAM or the paging ",
+                "file.\n\nIt anticipates memory pressure but does not say what is in RAM now."
             ),
         }
     }
