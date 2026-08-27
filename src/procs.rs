@@ -723,6 +723,63 @@ mod procs_unix;
 #[cfg(not(windows))]
 pub use procs_unix::{enable_debug_privilege, is_admin, kill, mem_status, Sampler};
 
+/// Returns the memory metric value for a process according to the chosen mode.
+pub fn metric_of(m: crate::config::MemMetric, p: &ProcInfo) -> u64 {
+    use crate::config::MemMetric;
+    match m {
+        MemMetric::WorkingSet => p.working_set,
+        MemMetric::Private => p.private_ws,
+        MemMetric::Commit => p.commit,
+    }
+}
+
+/// Compute subtree memory totals and process counts for every process via DFS with memo.
+/// Returns `(total_bytes_by_pid, count_by_pid)`.
+pub fn subtree_totals(
+    procs: &[ProcInfo],
+    mem_metric: crate::config::MemMetric,
+) -> (HashMap<u32, u64>, HashMap<u32, usize>) {
+    let by_pid: HashMap<u32, &ProcInfo> = procs.iter().map(|p| (p.pid, p)).collect();
+    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+    for p in procs {
+        children.entry(p.ppid).or_default().push(p.pid);
+    }
+    let mut totals = HashMap::new();
+    let mut counts = HashMap::new();
+    for p in procs {
+        subtree_dfs(p.pid, &by_pid, &children, mem_metric, &mut totals, &mut counts, 0);
+    }
+    (totals, counts)
+}
+
+fn subtree_dfs(
+    pid: u32,
+    by_pid: &HashMap<u32, &ProcInfo>,
+    children: &HashMap<u32, Vec<u32>>,
+    mem_metric: crate::config::MemMetric,
+    totals: &mut HashMap<u32, u64>,
+    counts: &mut HashMap<u32, usize>,
+    depth: usize,
+) -> (u64, usize) {
+    if let (Some(&t), Some(&c)) = (totals.get(&pid), counts.get(&pid)) {
+        return (t, c);
+    }
+    let own = by_pid.get(&pid).map(|p| metric_of(mem_metric, p)).unwrap_or(0);
+    let mut total = own;
+    let mut count = 1usize;
+    if depth < 128 {
+        for child in children.get(&pid).into_iter().flatten() {
+            let (child_total, child_count) =
+                subtree_dfs(*child, by_pid, children, mem_metric, totals, counts, depth + 1);
+            total += child_total;
+            count += child_count;
+        }
+    }
+    totals.insert(pid, total);
+    counts.insert(pid, count);
+    (total, count)
+}
+
 /// FILETIME atual (100 ns desde 1601-01-01 UTC).
 pub fn now_filetime() -> i64 {
     let d = std::time::SystemTime::now()

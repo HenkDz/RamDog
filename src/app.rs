@@ -155,7 +155,6 @@ struct MemBreakdown {
 struct KillReq {
     pids: Vec<(u32, String, u64)>,
     title: String,
-    tree: bool,
 }
 
 pub struct App {
@@ -375,7 +374,7 @@ impl App {
         let own = self
             .by_pid
             .get(&pid)
-            .map(|&i| Self::metric_of(m, &self.procs[i]))
+            .map(|&i| procs::metric_of(m, &self.procs[i]))
             .unwrap_or(0);
         let mut total = own;
         let mut count = 1usize;
@@ -466,11 +465,7 @@ impl App {
     }
 
     fn metric_of(m: MemMetric, p: &ProcInfo) -> u64 {
-        match m {
-            MemMetric::WorkingSet => p.working_set,
-            MemMetric::Private => p.private_ws,
-            MemMetric::Commit => p.commit,
-        }
+        procs::metric_of(m, p)
     }
 
     /// Reparte o "em uso" em parcelas que somam exatamente o total.
@@ -956,7 +951,7 @@ impl App {
                 fmt_bytes(self.mem_of(&p))
             )
         };
-        let req = KillReq { pids, title, tree };
+        let req = KillReq { pids, title };
         if self.cfg.confirm_kill {
             self.pending = Some(req);
         } else {
@@ -990,7 +985,6 @@ impl App {
             }
             self.toast(msg, true);
         }
-        let _ = req.tree;
     }
 
     fn toggle_lock(&mut self, name_lower: &str) {
@@ -3567,7 +3561,6 @@ impl eframe::App for App {
                                     let req = KillReq {
                                         pids: list,
                                         title,
-                                        tree: false,
                                     };
                                     if self.cfg.confirm_kill {
                                         self.pending = Some(req);
@@ -3600,7 +3593,6 @@ impl eframe::App for App {
                                     let req = KillReq {
                                         pids: list,
                                         title,
-                                        tree: false,
                                     };
                                     if self.cfg.confirm_kill {
                                         self.pending = Some(req);

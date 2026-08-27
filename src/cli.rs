@@ -270,12 +270,13 @@ fn command_tree(args: &[String]) -> Result<Option<Value>, String> {
     )?))
 }
 
-fn command_sessions(args: &[String]) -> Result<Option<Value>, String> {
+fn command_sessions(_args: &[String]) -> Result<Option<Value>, String> {
     let mut collector = Collector::new();
     let snapshot = collector.snapshot()?;
     let config = Config::load();
-    let value = snapshot_value(&snapshot, &config, has_flag(args, "--full-command"));
-    Ok(Some(value["ai_sessions"].clone()))
+    let overrides: HashMap<String, Category> = config.overrides.clone().into_iter().collect();
+    let categories = categories::classify(&snapshot.procs, &overrides);
+    Ok(Some(Value::Array(ai_sessions(&snapshot.procs, &categories))))
 }
 
 fn command_startup() -> Result<Option<Value>, String> {
@@ -334,12 +335,14 @@ fn has_flag(args: &[String], flag: &str) -> bool {
 fn snapshot_value(snapshot: &Snapshot, config: &Config, full_command: bool) -> Value {
     let overrides: HashMap<String, Category> = config.overrides.clone().into_iter().collect();
     let categories = categories::classify(&snapshot.procs, &overrides);
-    let (subtrees, counts) = subtree_values(&snapshot.procs, config);
+    let (subtrees, counts) = procs::subtree_totals(&snapshot.procs, config.mem_metric);
+    let mut cat_counts: HashMap<Category, usize> = HashMap::new();
     let processes: Vec<Value> = snapshot
         .procs
         .iter()
         .map(|p| {
             let category = categories.get(&p.pid).copied().unwrap_or(Category::Other);
+            *cat_counts.entry(category).or_insert(0) += 1;
             process_value(
                 p,
                 category,
@@ -352,12 +355,7 @@ fn snapshot_value(snapshot: &Snapshot, config: &Config, full_command: bool) -> V
     let category_counts = Category::ALL
         .iter()
         .map(|category| {
-            let count = snapshot
-                .procs
-                .iter()
-                .filter(|p| categories.get(&p.pid).copied() == Some(*category))
-                .count();
-            (category.label().to_string(), json!(count))
+            (category.label().to_string(), json!(cat_counts.get(category).unwrap_or(&0)))
         })
         .collect::<Map<String, Value>>();
 
@@ -428,7 +426,7 @@ fn inspect_value(
 ) -> Value {
     let overrides: HashMap<String, Category> = config.overrides.clone().into_iter().collect();
     let categories = categories::classify(&snapshot.procs, &overrides);
-    let (subtrees, counts) = subtree_values(&snapshot.procs, config);
+    let (subtrees, counts) = procs::subtree_totals(&snapshot.procs, config.mem_metric);
     let category = categories
         .get(&process.pid)
         .copied()
@@ -466,7 +464,7 @@ fn tree_value(
     let tree = process_tree(&snapshot.procs, root_pid)?;
     let overrides: HashMap<String, Category> = config.overrides.clone().into_iter().collect();
     let categories = categories::classify(&snapshot.procs, &overrides);
-    let (subtrees, counts) = subtree_values(&snapshot.procs, config);
+    let (subtrees, counts) = procs::subtree_totals(&snapshot.procs, config.mem_metric);
     let processes = tree
         .iter()
         .map(|(p, depth)| {
@@ -600,63 +598,7 @@ fn ai_sessions(procs: &[ProcInfo], categories: &HashMap<u32, Category>) -> Vec<V
         .collect()
 }
 
-fn subtree_values(procs: &[ProcInfo], config: &Config) -> (HashMap<u32, u64>, HashMap<u32, usize>) {
-    let by_pid: HashMap<u32, &ProcInfo> = procs.iter().map(|p| (p.pid, p)).collect();
-    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
-    for p in procs {
-        children.entry(p.ppid).or_default().push(p.pid);
-    }
-    let mut totals = HashMap::new();
-    let mut counts = HashMap::new();
-    for p in procs {
-        subtree_total(
-            p.pid,
-            &by_pid,
-            &children,
-            config,
-            &mut totals,
-            &mut counts,
-            0,
-        );
-    }
-    (totals, counts)
-}
 
-fn subtree_total(
-    pid: u32,
-    by_pid: &HashMap<u32, &ProcInfo>,
-    children: &HashMap<u32, Vec<u32>>,
-    config: &Config,
-    totals: &mut HashMap<u32, u64>,
-    counts: &mut HashMap<u32, usize>,
-    depth: usize,
-) -> (u64, usize) {
-    if let (Some(total), Some(count)) = (totals.get(&pid), counts.get(&pid)) {
-        return (*total, *count);
-    }
-    let own = by_pid.get(&pid).map(|p| metric_of(config, p)).unwrap_or(0);
-    let mut total = own;
-    let mut count = 1;
-    if depth < 128 {
-        for child in children.get(&pid).into_iter().flatten() {
-            let (child_total, child_count) =
-                subtree_total(*child, by_pid, children, config, totals, counts, depth + 1);
-            total = total.saturating_add(child_total);
-            count += child_count;
-        }
-    }
-    totals.insert(pid, total);
-    counts.insert(pid, count);
-    (total, count)
-}
-
-fn metric_of(config: &Config, process: &ProcInfo) -> u64 {
-    match config.mem_metric {
-        crate::config::MemMetric::WorkingSet => process.working_set,
-        crate::config::MemMetric::Private => process.private_ws,
-        crate::config::MemMetric::Commit => process.commit,
-    }
-}
 
 fn process_tree<'a>(
     procs: &'a [ProcInfo],
