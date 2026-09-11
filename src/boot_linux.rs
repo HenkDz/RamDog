@@ -40,25 +40,24 @@ impl Boot {
         if self.scan.due(30) {
             self.scan.start(startup_linux::scan);
         }
-        ui.heading("Partida · Linux");
-        ui.label("Serviços, temporizadores, sockets e aplicativos de login. Alterar a inicialização não encerra o serviço em execução.");
-        ui.horizontal(|ui| {
-            if ui.button("Atualizar").clicked() {
+        crate::kit::intro(ui, "Serviços, temporizadores, sockets e aplicativos de login. Alterar a inicialização não encerra o que já está rodando.");
+        ui.add_space(6.0);
+        crate::kit::toolbar(ui, |ui| {
+            if ui.add(crate::kit::button("Atualizar")).clicked() {
                 self.scan.start(startup_linux::scan);
             }
-            ui.label("Buscar");
-            ui.text_edit_singleline(&mut self.search);
-            ui.label(format!("{} entradas", self.scan.value.entries.len()));
+            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Buscar").desired_width(200.0));
+            ui.label(crate::kit::muted(&format!("{} entradas", self.scan.value.entries.len())));
         });
         self.scan.status(ui);
         self.action.status(ui);
         for warning in &self.scan.value.warnings {
             ui.colored_label(egui::Color32::YELLOW, warning);
         }
-        ui.horizontal(|ui| {
-            ui.label("Preset");
-            ui.text_edit_singleline(&mut self.preset);
-            if ui.button("Salvar estado atual").clicked() && !self.preset.trim().is_empty() {
+        crate::kit::toolbar(ui, |ui| {
+            ui.label(crate::kit::muted("Preset"));
+            ui.add(egui::TextEdit::singleline(&mut self.preset).hint_text("nome").desired_width(160.0));
+            if ui.add(crate::kit::button("Salvar estado atual")).clicked() && !self.preset.trim().is_empty() {
                 let states: BTreeMap<_, _> = self
                     .scan
                     .value
@@ -93,7 +92,7 @@ impl Boot {
                 });
         });
         if let Some(changes) = self.pending.clone() {
-            ui.group(|ui| {
+            crate::kit::row(ui, |ui| {
                 ui.label(format!("{} alterações no preset:", changes.len()));
                 for (e, on) in &changes {
                     ui.label(format!(
@@ -104,7 +103,7 @@ impl Boot {
                 }
                 ui.horizontal(|ui| {
                     if ui
-                        .add_enabled(!self.action.busy(), egui::Button::new("Aplicar alterações"))
+                        .add_enabled(!self.action.busy(), crate::kit::primary("Aplicar alterações"))
                         .clicked()
                     {
                         self.action.start(move || {
@@ -115,21 +114,23 @@ impl Boot {
                         });
                         self.pending = None;
                     }
-                    if ui.button("Cancelar").clicked() {
+                    if ui.add(crate::kit::button("Cancelar")).clicked() {
                         self.pending = None;
                     }
                 });
             });
         }
         let query = self.search.to_lowercase();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.add_space(6.0);
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             egui::Grid::new("linux-startup")
                 .num_columns(6)
                 .striped(true)
-                .spacing([12.0, 6.0])
+                .spacing([14.0, 8.0])
+                .min_row_height(26.0)
                 .show(ui, |ui| {
                     for label in ["Iniciar", "Entrada", "Origem", "Estado", "RAM", "Ações"] {
-                        ui.strong(label);
+                        ui.label(crate::kit::muted(label));
                     }
                     ui.end_row();
                     for e in &self.scan.value.entries {
@@ -153,24 +154,32 @@ impl Boot {
                             let e = e.clone();
                             self.action.start(move || startup_linux::toggle(&e, on));
                         }
-                        ui.label(&e.name).on_hover_text(&e.description);
-                        ui.label(&e.kind);
-                        ui.label(format!(
-                            "{} · {}",
-                            e.state,
-                            if e.active { "em execução" } else { "parada" }
-                        ));
+                        ui.scope(|ui| {
+                            ui.set_min_width(240.0);
+                            ui.set_max_width(240.0);
+                            ui.add(egui::Label::new(&e.name).truncate()).on_hover_text(&e.description);
+                        });
+                        ui.label(crate::kit::muted(&e.kind));
+                        if e.active {
+                            crate::kit::badge(ui, "em execução", egui::Color32::from_rgb(120, 200, 140));
+                        } else {
+                            ui.label(crate::kit::muted(&format!("{} · parada", e.state)));
+                        }
                         ui.label(
-                            e.memory
-                                .map(|n| format!("{:.1} MiB", n as f64 / 1048576.0))
-                                .unwrap_or_else(|| "—".into()),
+                            egui::RichText::new(
+                                e.memory
+                                    .map(|n| format!("{:.1} MiB", n as f64 / 1048576.0))
+                                    .unwrap_or_else(|| "—".into()),
+                            )
+                            .monospace()
+                            .size(12.0),
                         );
                         if let startup_linux::Source::Unit { user, unit } = &e.source {
                             let action = if e.active { "stop" } else { "start" };
                             if ui
                                 .add_enabled(
                                     !e.protected && !self.action.busy(),
-                                    egui::Button::new(if e.active { "Parar" } else { "Iniciar" }),
+                                    crate::kit::button(if e.active { "Parar" } else { "Iniciar" }),
                                 )
                                 .clicked()
                             {
@@ -179,7 +188,7 @@ impl Boot {
                                     .start(move || startup_linux::unit_action(user, action, &unit));
                             }
                         } else {
-                            ui.label("No próximo login");
+                            ui.label(crate::kit::muted("no próximo login"));
                         }
                         ui.end_row();
                     }

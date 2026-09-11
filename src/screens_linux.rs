@@ -129,9 +129,9 @@ fn lua_dispatch(action: &str, arg: &str) -> Result<String, String> {
             "hl.dsp.window.float({{window={},action=\"{}\"}})",
             window(arg)?,
             if action == "setfloating" {
-                "set"
+                "enable"
             } else {
-                "unset"
+                "disable"
             }
         ),
         "fullscreenstate" => {
@@ -371,12 +371,12 @@ impl Screens {
         if self.layout.due(3) {
             self.layout.start(scan);
         }
-        ui.heading("Telas · Hyprland");
-        ui.label("Selecione janelas para distribuir em uma grade. Arraste uma janela no mapa para outro monitor.");
+        crate::kit::intro(ui, "Hyprland: selecione janelas para distribuir numa grade, ou arraste uma janela no mapa para outro monitor.");
         self.layout.status(ui);
         self.action.status(ui);
-        ui.horizontal(|ui| {
-            if ui.button("Atualizar").clicked() {
+        ui.add_space(6.0);
+        crate::kit::toolbar(ui, |ui| {
+            if ui.add(crate::kit::button("Atualizar")).clicked() {
                 self.layout.start(scan);
             }
             egui::ComboBox::from_id_salt("linux-monitor")
@@ -547,13 +547,13 @@ impl Screens {
                 }
             }
         }
-        ui.horizontal(|ui| {
-            ui.label("Cenário");
-            ui.text_edit_singleline(&mut self.preset);
+        crate::kit::toolbar(ui, |ui| {
+            ui.label(crate::kit::muted("Cenário"));
+            ui.add(egui::TextEdit::singleline(&mut self.preset).hint_text("nome").desired_width(160.0));
             if ui
                 .add_enabled(
                     !self.selected.is_empty(),
-                    egui::Button::new("Salvar selecionadas"),
+                    crate::kit::button("Salvar selecionadas"),
                 )
                 .clicked()
                 && !self.preset.trim().is_empty()
@@ -568,7 +568,7 @@ impl Screens {
         for (name, preset) in &mut cfg.screen_presets {
             ui.collapsing(name, |ui| {
                 if ui
-                    .add_enabled(!self.action.busy(), egui::Button::new("Aplicar cenário"))
+                    .add_enabled(!self.action.busy(), crate::kit::primary("Aplicar cenário"))
                     .clicked()
                 {
                     let preset = preset.clone();
@@ -584,33 +584,40 @@ impl Screens {
                 }
             });
         }
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.add_space(6.0);
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 6.0;
             for window in &self.layout.value.windows {
-                ui.horizontal(|ui| {
-                    let mut selected = self.selected.contains(&window.address);
-                    if ui
-                        .checkbox(
-                            &mut selected,
-                            format!("{} · {}", window.class, window.title),
-                        )
-                        .changed()
-                    {
-                        if selected {
-                            self.selected.insert(window.address.clone());
-                        } else {
-                            self.selected.remove(&window.address);
+                crate::kit::row(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let mut selected = self.selected.contains(&window.address);
+                        if ui.checkbox(&mut selected, "").changed() {
+                            if selected {
+                                self.selected.insert(window.address.clone());
+                            } else {
+                                self.selected.remove(&window.address);
+                            }
                         }
-                    }
-                    if ui.button("Focar").clicked() {
-                        let a = window.address.clone();
-                        self.action
-                            .start(move || dispatch("focuswindow", &selector(&a)?));
-                    }
-                    if window.floating && ui.button("Voltar ao mosaico").clicked() {
-                        let a = window.address.clone();
-                        self.action
-                            .start(move || dispatch("settiled", &selector(&a)?));
-                    }
+                        ui.scope(|ui| {
+                            ui.set_max_width((ui.available_width() - 260.0).max(160.0));
+                            crate::kit::two_lines(ui, egui::RichText::new(&window.title), &window.class);
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if window.floating && ui.add(crate::kit::button("Voltar ao mosaico")).clicked() {
+                                let a = window.address.clone();
+                                self.action
+                                    .start(move || dispatch("settiled", &selector(&a)?));
+                            }
+                            if ui.add(crate::kit::button("Focar")).clicked() {
+                                let a = window.address.clone();
+                                self.action
+                                    .start(move || dispatch("focuswindow", &selector(&a)?));
+                            }
+                            if window.floating {
+                                crate::kit::badge(ui, "flutuando", crate::app::ACCENT_FG);
+                            }
+                        });
+                    });
                 });
             }
         });
@@ -622,6 +629,19 @@ impl Screens {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lua_float_dispatch_uses_supported_idempotent_actions() {
+        // Hyprland's float parser treats unsupported actions as toggle.
+        // Repeated placement must keep a window floating, and restore must keep it tiled.
+        assert_eq!(
+            lua_dispatch("setfloating", "address:0x123abc").unwrap(),
+            "hl.dsp.window.float({window=\"address:0x123abc\",action=\"enable\"})"
+        );
+        assert_eq!(
+            lua_dispatch("settiled", "address:0x123abc").unwrap(),
+            "hl.dsp.window.float({window=\"address:0x123abc\",action=\"disable\"})"
+        );
+    }
     #[test]
     fn monitor_geometry_accounts_for_scale_rotation_and_panels() {
         let m = Monitor {
@@ -686,26 +706,32 @@ mod linux_integration {
             .find(|m| m.id != window.monitor)
             .unwrap_or(&original_monitor);
         let target = target_monitor.area().shrink(20.0);
-        place(&window.address, target_monitor, target).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        let moved = scan()
-            .unwrap()
-            .windows
-            .into_iter()
-            .find(|w| w.pid == pid)
-            .unwrap();
-        assert_eq!(moved.monitor, target_monitor.id);
-        assert!(
-            (moved.at[0] - target.left()).abs() < 4.0 && (moved.at[1] - target.top()).abs() < 4.0,
-            "{:?} != {:?}",
-            moved.at,
-            target
-        );
-        assert!(
-            (moved.size[0] - target.width()).abs() < 4.0,
-            "{:?} != {:?}",
-            moved.size,
-            target
-        );
+        for _ in 0..2 {
+            place(&window.address, target_monitor, target).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            let moved = scan()
+                .unwrap()
+                .windows
+                .into_iter()
+                .find(|w| w.pid == pid)
+                .unwrap();
+            assert!(
+                moved.floating,
+                "Repeated placement must keep the window floating"
+            );
+            assert_eq!(moved.monitor, target_monitor.id);
+            assert!(
+                (moved.at[0] - target.left()).abs() < 4.0 && (moved.at[1] - target.top()).abs() < 4.0,
+                "{:?} != {:?}",
+                moved.at,
+                target
+            );
+            assert!(
+                (moved.size[0] - target.width()).abs() < 4.0,
+                "{:?} != {:?}",
+                moved.size,
+                target
+            );
+        }
     }
 }

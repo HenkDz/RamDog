@@ -15,4 +15,6 @@ Somente após todas as compilações passarem, o workflow calcula `SHA256SUMS.tx
 
 Se falhar infraestrutura ou upload, use `gh run rerun ID --failed`. Se o código precisar mudar, faça a correção e escolha uma nova versão/tag; não mova uma tag publicada. Uma release já publicada não é sobrescrita por uma reexecução.
 
-Os binários Linux são compilados no Ubuntu 24.04 e exigem glibc 2.39 ou posterior e bibliotecas gráficas compatíveis. Em distribuições anteriores, compile do código na própria distribuição. ARM64 e macOS têm validação de build/testes em CI; suporte específico a hardware e compositor precisa de teste real.
+Os binários Linux são compilados no Ubuntu 24.04 e exigem glibc 2.39 ou posterior e bibliotecas gráficas compatíveis. Em distribuições anteriores, compile do código na própria distribuição. ARM64 e macOS têm validação de build/testes em CI; suporte específico a hardware e compositor precisa de teste real. O desktop Linux de referência continua sendo Omarchy/Hyprland.
+
+A imagem de preview social do GitHub (1280×640) está em `docs/media/banners/og.png`. Depois de publicar, confira em Settings → General → Social preview se o GitHub já a escolheu; se não, envie esse arquivo.

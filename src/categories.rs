@@ -105,6 +105,7 @@ const GAMES_NAMES: &[&str] = &[
     "robloxplayerbeta", "xboxapp", "xboxpcapp", "gamingservices", "gamebar", "gamebarpresencewriter",
     "gamingservicesnet", "rockstarservice", "launcher", "cs2", "dota2", "fortniteclient-win64-shipping",
     "genshinimpact", "starrail", "wutheringwaves", "playnite", "curseforge", "overwolf", "medal",
+    "overwatch", "overwatch2", "overwatch.exe", "cyberpunk2077",
 ];
 const PERSONAL_NAMES: &[&str] = &[
     "spotify", "discord", "whatsapp", "telegram", "slack", "teams", "ms-teams", "zoom", "vlc", "obs64",
@@ -292,6 +293,80 @@ pub fn classify(procs: &[ProcInfo], overrides: &HashMap<String, Category>) -> Ha
     result
 }
 
+/// Chave da visão Lista: famílias reconhecidas ou o caminho completo do executável.
+///
+/// `mise` instala `claude` em pastas versionadas; Codex vem do ChatGPT e do PATH.
+/// Agrupar pelo caminho deixava 8 Claudes e 12 Codex como linhas soltas. Hosts
+/// genéricos (`node`, `python`, `bash`) continuam separados pelo executável, para
+/// um venv não engolir o outro. Processos lançados por um agente herdam a família
+/// dele — o `node` do Claude cai no grupo Claude.
+pub fn group_key(p: &ProcInfo) -> String {
+    crate::identity::of(p).key
+}
+
+/// Rótulo do cabeçalho do grupo. `fallback` é o nome do primeiro processo.
+pub fn group_label(key: &str, fallback: &str) -> String {
+    match key {
+        "app:claude" => "Claude".into(),
+        "app:codex" => "Codex".into(),
+        "app:grok" => "Grok".into(),
+        "app:chatgpt" => "ChatGPT".into(),
+        "app:maestri" => "Maestri".into(),
+        "app:cursor" => "Cursor".into(),
+        "app:hermes" => "Hermes".into(),
+        "app:opencode" => "OpenCode".into(),
+        "app:gemini" => "Gemini".into(),
+        _ => fallback.to_string(),
+    }
+}
+
+fn process_base(p: &ProcInfo) -> String {
+    let from_exe = std::path::Path::new(&p.exe_path)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let raw = if from_exe.is_empty() {
+        p.name_lower.clone()
+    } else {
+        from_exe.to_lowercase()
+    };
+    base_name(&raw).to_string()
+}
+
+fn family_of(p: &ProcInfo) -> Option<&'static str> {
+    if let Some(fam) = p.launcher.agent.as_deref().and_then(agent_family) {
+        return Some(fam);
+    }
+    known_family(&process_base(p))
+}
+
+fn agent_family(agent: &str) -> Option<&'static str> {
+    match agent {
+        "Claude Code" => Some("claude"),
+        "Codex" => Some("codex"),
+        "Grok CLI" => Some("grok"),
+        "Cursor Agent" => Some("cursor"),
+        "Gemini CLI" => Some("gemini"),
+        "Hermes" => Some("hermes"),
+        _ => None,
+    }
+}
+
+fn known_family(base: &str) -> Option<&'static str> {
+    match base {
+        "claude" | "claude-code" => Some("claude"),
+        "codex" => Some("codex"),
+        "grok" | "grok-bot" => Some("grok"),
+        "chatgpt" => Some("chatgpt"),
+        "maestri" | "maestri-app" => Some("maestri"),
+        "cursor" => Some("cursor"),
+        "hermes" | "hermes-agent" => Some("hermes"),
+        "opencode" => Some("opencode"),
+        "gemini" | "gemini-cli" => Some("gemini"),
+        _ => None,
+    }
+}
+
 /// Kernel thread do Linux: nome entre colchetes ou os clássicos do kthreadd.
 fn is_linux_kernel_thread(name_lower: &str) -> bool {
     let n = name_lower.trim_start_matches('[').trim_end_matches(']');
@@ -354,5 +429,118 @@ mod protection_tests {
             assert!(super::is_critical(name, 4242));
         }
         assert!(!super::is_critical("ordinary-app", 4242));
+    }
+}
+
+#[cfg(test)]
+mod group_key_tests {
+    use super::{group_key, group_label};
+    use crate::procs::{Launcher, ProcInfo};
+
+    fn proc(name: &str, exe: &str, agent: Option<&str>) -> ProcInfo {
+        ProcInfo {
+            name: name.into(),
+            name_lower: name.to_lowercase(),
+            exe_path: exe.into(),
+            launcher: Launcher {
+                agent: agent.map(|s| s.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn versioned_claude_and_codex_installs_share_a_group() {
+        let claude_latest = proc(
+            "claude",
+            "/home/lol/.local/share/mise/installs/claude/latest/claude",
+            None,
+        );
+        let claude_ver = proc(
+            "claude",
+            "/home/lol/.local/share/mise/installs/claude/2.1.261/claude",
+            None,
+        );
+        let codex_mise = proc(
+            "codex",
+            "/home/lol/.local/share/mise/installs/codex/latest/bin/codex",
+            None,
+        );
+        let codex_chatgpt = proc("codex", "/usr/lib/chatgpt/resources/codex", None);
+        assert_eq!(group_key(&claude_latest), group_key(&claude_ver));
+        assert_eq!(group_key(&claude_latest), "app:claude");
+        assert_eq!(group_key(&codex_mise), group_key(&codex_chatgpt));
+        assert_eq!(group_key(&codex_mise), "app:codex");
+        assert_ne!(group_key(&claude_latest), group_key(&codex_mise));
+        assert_eq!(group_label("app:claude", "claude"), "Claude");
+        assert_eq!(group_label("app:codex", "codex"), "Codex");
+    }
+
+    #[test]
+    fn node_spawned_by_claude_joins_the_claude_group() {
+        let node = proc(
+            "node",
+            "/home/lol/.local/share/mise/installs/node/26.7.0/bin/node",
+            Some("Claude Code"),
+        );
+        let claude = proc("claude", "/usr/bin/claude", None);
+        assert_eq!(group_key(&node), group_key(&claude));
+    }
+
+    #[test]
+    fn review_unrelated_executables_with_same_name_stay_apart() {
+        let a = proc("worker", "/opt/project-a/worker", None);
+        let b = proc("worker", "/opt/project-b/worker", None);
+        assert_ne!(group_key(&a), group_key(&b));
+        assert_eq!(group_label(&group_key(&a), &a.name), "worker");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_unix_executable_paths_keep_case() {
+        let upper = proc("worker", "/opt/A/worker", None);
+        let lower = proc("worker", "/opt/a/worker", None);
+        assert_ne!(group_key(&upper), group_key(&lower));
+    }
+
+    #[test]
+    fn different_python_venvs_stay_apart() {
+        let a = proc("python3", "/home/lol/proj-a/.venv/bin/python3", None);
+        let b = proc("python3", "/home/lol/proj-b/.venv/bin/python3", None);
+        assert_ne!(group_key(&a), group_key(&b));
+        assert_eq!(group_key(&a), "project:proj-a");
+    }
+
+    #[test]
+    fn proton_overwatch_does_not_share_key_with_other_wine() {
+        let wine = "/opt/proton/bin/wine64";
+        let ow = ProcInfo {
+            name: "wine64".into(),
+            name_lower: "wine64".into(),
+            exe_path: wine.into(),
+            cmdline: format!("{wine} C:\\\\Overwatch.exe"),
+            launcher: Launcher {
+                steam_app_id: Some(2357570),
+                wine_prefix: Some("/steamapps/compatdata/2357570/pfx".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let other = ProcInfo {
+            name: "wine64".into(),
+            name_lower: "wine64".into(),
+            exe_path: wine.into(),
+            cmdline: format!("{wine} C:\\\\Cyberpunk2077.exe"),
+            launcher: Launcher {
+                steam_app_id: Some(1091500),
+                wine_prefix: Some("/steamapps/compatdata/1091500/pfx".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(group_key(&ow), "steam:2357570");
+        assert_eq!(group_key(&other), "steam:1091500");
+        assert_eq!(crate::identity::of(&ow).label, "Overwatch 2");
     }
 }

@@ -2,6 +2,56 @@
 
 As mudanças são registradas por versão. As notas descrevem funcionalidades disponíveis e suas limitações; testes de hardware não equivalem a cobertura de todos os drivers e desktops.
 
+## [0.10.0] - 2026-09-11
+
+Interface nova, addon Limpeza, identidade da tarefa, GPU/VRAM na lista e encerramento que não mente. Inclui tudo da 0.9.1, que não chegou a ser publicada.
+
+Patch notes: [v0.10.0](docs/releases/v0.10.0.md).
+
+### Corrigido
+
+- Linux: Overwatch/Proton deixa de aparecer como um `wine64` só. A chave do grupo é Steam appid / prefixo Wine / projeto / agente, não o path do runtime.
+- Encerrar: ESRCH vira “já tinham saído”, não falha vermelha. Clique em PID morto avisa em vez de silenciar. F5 e o próprio kill descongelam a tabela. Grupo recolhido que cai de 2 para 1 PIDs mostra o sobrevivente.
+- Coluna Comando de processos Wine deixa de cortar no primeiro `.exe` (não esconde mais `Overwatch.exe`).
+- GPU `–` deixa de significar zero: ausência de leitura do driver é distinta de carga ~0%. A soma do grupo usa o máximo entre PIDs, não a soma das cargas.
+
+### Adicionado
+
+- Interface nova, no espírito do libadwaita: barra lateral com visões e addons (sai a fileira de abas e o bloco de botões do topo), cabeçalho com busca e agrupamento, quatro cards de recurso com gráfico dos últimos 90 s, tabela de linhas duplas (ícone ou inicial, nome, "PID · categoria · origem" e chip de estado), filtros de corte e métrica de RAM numa janela de Preferências. Paleta em cinzas neutros (1e1e1e / 242424 / 2b2b2b) com o azul do GNOME; no Linux usa Adwaita Sans/Mono quando instaladas. As colunas Cat., PID, Estado e Origem viraram texto na linha; ordenar por elas fica no menu de contexto. Partida, Desperdício, Térmico, Telas e Limpeza usam o mesmo vocabulário (botões em pílula, linhas em caixa, badges de estado) via `src/kit.rs`.
+- Linux: addon **Limpeza**. RAM (`/proc/meminfo`, soltar cache do kernel), apps acima de um corte de RAM para marcar e encerrar de uma vez (sobras e zombies primeiro, janela aberta por último, mesmo lock da lista) e disco: subpastas de `~/.cache`, lixeira, cache do pacman, journal, coredumps e pacotes órfãos, cada um com confirmação inline. O que é do sistema passa por `pkexec ramdog --clean-helper <op>`; o helper só conhece operações fixas e recalcula os alvos, sem receber caminho por argumento.
+- Colunas VRAM e Estado (em foco / janela / fundo / leftover / zombie). Leftover só com evidência (zombie, emulador `-qt-hide-window`).
+- Filtros “ocultar abaixo de” para CPU, GPU e VRAM, independentes da RAM. Com Agrupar por app, o corte vale no total do app.
+- Origem Steam/Proton, projeto (venv) e emulador Android nomeado pelo AVD.
+
+### Alterado
+
+- Largura mínima da janela completa passa de 900 para 1000 px por causa da barra lateral. O modo Mini não muda.
+
+## [0.9.1] - 2026-09-08
+
+A sessão longa no Linux — em particular no [Omarchy](https://omarchy.org/) com Hyprland — deixa de degradar. O sampler lê `/proc` direto, o agrupamento de agentes cabe numa linha e o Telas no Hyprland 0.55+ deixa a janela no estado pedido.
+
+Patch notes: [v0.9.1](docs/releases/v0.9.1.md). Publicada junto com a 0.10.0.
+
+### Corrigido
+
+- Linux: o sampler não indexa mais cada thread como processo nem mantém `/proc/*/stat` aberto. Isso vazava milhares de descritores, queimava CPU e fazia a lista/RAM/CPU mentirem depois de algumas horas.
+- Linux: descritores de arquivo voltam a aparecer na ficha do processo; a coluna CPU usa a mesma média móvel de 1 s do Windows, em % da máquina (100% = todos os núcleos), mesmo quando o próprio RamDog tem afinidade restrita.
+- Linux: USS/PSS deixam de ser relidos em todos os processos a cada amostra (teto por ciclo, cache de 5 s, fila que prioriza o que nunca foi tentado). Sem smaps, o privado cai na estimativa `RSS − shared` de `statm`, não em zero. Tentativas com erro respeitam o intervalo do cache; processos sem permissão não bloqueiam os demais; leituras ausentes ou vencidas não aparecem como zero.
+- Linux: a varredura DRM por processo lê só descritores `/dev/dri`, ignora NVIDIA (já coberta pelo `nvidia-smi pmon`) e não percorre o `fdinfo` inteiro de cada PID. Sem placa AMD/Intel, essa varredura nem começa. O worker de GPU espera 1,5 s entre coletas.
+- Hyprland 0.55+: `setfloating` / `settiled` usam `enable` / `disable`. Ações que o compositor não reconhece viravam *toggle*, então o segundo encaixe podia devolver a janela ao tiling.
+- Mini: ao voltar para a janela inteira, o teto de tamanho do modo mini é removido (`MaxInnerSize` infinito). No X11, só `Resizable` não bastava.
+
+### Alterado
+
+- Lista: famílias reconhecidas (Claude, Codex, Grok, ChatGPT, Cursor, Gemini, Hermes, Maestri, OpenCode) viram uma linha só, inclusive com instalações versionadas e o `node` lançado pelo agente. O grupo começa recolhido; clica para ver os PIDs. `node`/`python` de venvs diferentes continuam separados.
+- Agrupamento: executáveis fora das famílias reconhecidas ficam separados por caminho, preservando maiúsculas/minúsculas no Unix; o botão de encerrar um grupo não mistura binários homônimos de projetos diferentes.
+
+### Documentação
+
+- Vitrine no GitHub Pages com vídeo narrado e legendado, oito capturas reais, comparação documentada e instruções por sistema.
+- README, changelog e patch notes passam a tratar o Omarchy como alvo de primeira classe no Linux (Hyprland, UWSM, Quickshell, pacman, NVIDIA/AMD).
+
 ## [0.9.0] - 2026-09-05
 
 ### Adicionado
@@ -49,5 +99,7 @@ Patch notes: [v0.9.0](docs/releases/v0.9.0.md).
 
 O histórico anterior está nas [releases do GitHub](https://github.com/LucasOl1337/RamDog/releases).
 
+[0.10.0]: https://github.com/LucasOl1337/RamDog/compare/v0.9.0...v0.10.0
+[0.9.1]: https://github.com/LucasOl1337/RamDog/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/LucasOl1337/RamDog/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/LucasOl1337/RamDog/releases/tag/v0.8.0

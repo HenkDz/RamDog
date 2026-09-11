@@ -17,6 +17,15 @@ pub struct Config {
     pub refresh_ms: u64,
     /// Ocultar processos com menos que X MB (na métrica escolhida em `mem_metric`).
     pub min_mb: u32,
+    /// Ocultar processos com CPU abaixo deste percentual da máquina. 0 = não filtra.
+    #[serde(default)]
+    pub min_cpu: f32,
+    /// Ocultar processos com carga de GPU abaixo deste percentual. 0 = não filtra.
+    #[serde(default)]
+    pub min_gpu: f32,
+    /// Ocultar processos com VRAM abaixo deste valor. 0 = não filtra.
+    #[serde(default)]
+    pub min_vram_mb: u32,
     pub view: ViewMode,
     pub show_system: bool,
     /// Qual número a coluna RAM mostra. Ver `MemMetric`.
@@ -222,19 +231,23 @@ pub enum ViewMode {
     Drains,
     Thermal,
     Screens,
+    Clean,
 }
 
 impl ViewMode {
     pub const CORE: [ViewMode; 3] = [ViewMode::List, ViewMode::Tree, ViewMode::Category];
-    pub const ADDONS: [ViewMode; 4] =
-        [ViewMode::Boot, ViewMode::Drains, ViewMode::Thermal, ViewMode::Screens];
+    pub const ADDONS: [ViewMode; 5] =
+        [ViewMode::Boot, ViewMode::Drains, ViewMode::Thermal, ViewMode::Screens, ViewMode::Clean];
 
     pub fn available(self) -> bool {
+        if self == Self::Clean {
+            return cfg!(target_os = "linux");
+        }
         cfg!(any(windows, target_os = "linux")) || matches!(self, Self::List | Self::Tree | Self::Category | Self::Thermal)
     }
 
     pub fn is_addon(self) -> bool {
-        matches!(self, ViewMode::Boot | ViewMode::Drains | ViewMode::Thermal | ViewMode::Screens)
+        matches!(self, ViewMode::Boot | ViewMode::Drains | ViewMode::Thermal | ViewMode::Screens | ViewMode::Clean)
     }
 
     pub fn label(self) -> &'static str {
@@ -246,6 +259,7 @@ impl ViewMode {
             ViewMode::Drains => "Desperdício",
             ViewMode::Thermal => "Térmico",
             ViewMode::Screens => "Telas",
+            ViewMode::Clean => "Limpeza",
         }
     }
 
@@ -257,6 +271,7 @@ impl ViewMode {
             ViewMode::Drains => "⚠",
             ViewMode::Thermal => "♨",
             ViewMode::Screens => "▦",
+            ViewMode::Clean => "♻",
             _ => "",
         }
     }
@@ -279,6 +294,10 @@ impl ViewMode {
                 "Monitores, janelas e cenários: arraste janelas no mapa, encaixe na grade ",
                 "e abra vários apps já posicionados"
             ),
+            ViewMode::Clean => concat!(
+                "RAM e disco: sobras, zombies e apps parados em segundo plano para encerrar; ",
+                "caches, lixeira, pacman, journal e coredumps para apagar"
+            ),
         }
     }
 }
@@ -290,6 +309,9 @@ impl Default for Config {
             overrides: BTreeMap::new(),
             refresh_ms: 1000,
             min_mb: 0,
+            min_cpu: 0.0,
+            min_gpu: 0.0,
+            min_vram_mb: 0,
             view: ViewMode::List,
             show_system: true,
             mem_metric: MemMetric::WorkingSet,

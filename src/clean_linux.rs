@@ -1,0 +1,891 @@
+//! Visão "Limpeza" no Linux: RAM (sobras, zombies, apps pesados em segundo plano) e
+//! disco (caches do usuário, lixeira, cache do pacman, journal, coredumps, órfãos).
+//!
+//! O que é do usuário o app apaga direto. O que é do sistema passa pelo `pkexec` com
+//! `ramdog --clean-helper <op>`: o helper roda como root, mas só conhece operações fixas
+//! e nunca recebe caminho ou nome de pacote pela linha de comando — recalcula tudo lá
+//! dentro. Nada passa por shell.
+
+use std::collections::HashMap;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
+
+use egui::{Color32, RichText};
+
+use crate::app::{fmt_bytes, fmt_bytes_short, ACCENT, LINE, MUTED, SURFACE};
+use crate::identity;
+use crate::linux::{self, Job};
+use crate::procs::ProcInfo;
+
+pub enum CleanOut {
+    Toast(String, bool),
+    Kill(Vec<u32>),
+}
+
+/// Leitura de `/proc/meminfo`, em bytes.
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
+pub struct Mem {
+    pub total: u64,
+    pub available: u64,
+    pub free: u64,
+    pub cached: u64,
+    pub buffers: u64,
+    pub reclaimable: u64,
+    pub shmem: u64,
+    pub swap_total: u64,
+    pub swap_free: u64,
+}
+
+impl Mem {
+    pub fn used(&self) -> u64 {
+        self.total.saturating_sub(self.available)
+    }
+    /// Cache que o kernel solta sozinho sob pressão (page cache + slab recuperável).
+    pub fn droppable(&self) -> u64 {
+        (self.cached + self.buffers + self.reclaimable).saturating_sub(self.shmem)
+    }
+}
+
+pub fn meminfo() -> Mem {
+    parse_meminfo(&std::fs::read_to_string("/proc/meminfo").unwrap_or_default())
+}
+
+fn parse_meminfo(text: &str) -> Mem {
+    let mut m = Mem::default();
+    for line in text.lines() {
+        let Some((key, rest)) = line.split_once(':') else { continue };
+        let kb: u64 = rest.split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let b = kb * 1024;
+        match key {
+            "MemTotal" => m.total = b,
+            "MemAvailable" => m.available = b,
+            "MemFree" => m.free = b,
+            "Cached" => m.cached = b,
+            "Buffers" => m.buffers = b,
+            "SReclaimable" => m.reclaimable = b,
+            "Shmem" => m.shmem = b,
+            "SwapTotal" => m.swap_total = b,
+            "SwapFree" => m.swap_free = b,
+            _ => {}
+        }
+    }
+    m
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// Conteúdo de uma pasta do usuário (`~/.cache/<x>`). Apaga o conteúdo, mantém a pasta.
+    UserDir,
+    Trash,
+    /// `paccache -rk1` + `-ruk0`: mantém a versão instalada de cada pacote.
+    Pacman,
+    /// `journalctl --vacuum-size=64M`.
+    Journal,
+    Coredump,
+    /// `pacman -Rns` no que `pacman -Qtdq` devolve.
+    Orphans,
+}
+
+impl Kind {
+    fn needs_root(self) -> bool {
+        matches!(self, Kind::Pacman | Kind::Journal | Kind::Coredump | Kind::Orphans)
+    }
+    fn helper_op(self) -> &'static str {
+        match self {
+            Kind::Pacman => "paccache",
+            Kind::Journal => "journal",
+            Kind::Coredump => "coredump",
+            Kind::Orphans => "orphans",
+            Kind::UserDir | Kind::Trash => "",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Target {
+    pub kind: Kind,
+    pub name: String,
+    pub path: PathBuf,
+    pub detail: String,
+    pub bytes: u64,
+    pub items: u64,
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct Report {
+    pub targets: Vec<Target>,
+    pub warnings: Vec<String>,
+}
+
+fn home() -> PathBuf {
+    PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+}
+
+fn cache_home() -> PathBuf {
+    std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".cache"))
+}
+
+fn data_home() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".local/share"))
+}
+
+/// Tamanho em disco (blocos, como o `du`) e número de arquivos, sem seguir symlinks.
+pub fn du(path: &Path) -> (u64, u64) {
+    let mut bytes = 0u64;
+    let mut items = 0u64;
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let Ok(md) = e.metadata() else { continue };
+            // `DirEntry::metadata` não segue symlink: um link para /usr não conta como /usr.
+            if md.file_type().is_symlink() {
+                items += 1;
+                continue;
+            }
+            if md.is_dir() {
+                stack.push(e.path());
+            } else {
+                bytes += md.blocks() * 512;
+                items += 1;
+            }
+        }
+    }
+    (bytes, items)
+}
+
+/// Apaga o conteúdo de `dir` (não a pasta). Devolve bytes e itens removidos; erros
+/// individuais (arquivo em uso, permissão) são contados, não abortam.
+pub fn remove_contents(dir: &Path) -> Result<(u64, u64, u64), String> {
+    let rd = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut freed = 0u64;
+    let mut removed = 0u64;
+    let mut failed = 0u64;
+    for e in rd.flatten() {
+        let p = e.path();
+        let Ok(md) = e.metadata() else { failed += 1; continue };
+        let (b, n) = if md.is_dir() && !md.file_type().is_symlink() { du(&p) } else { (md.blocks() * 512, 1) };
+        let r = if md.is_dir() && !md.file_type().is_symlink() {
+            std::fs::remove_dir_all(&p)
+        } else {
+            std::fs::remove_file(&p)
+        };
+        if r.is_ok() {
+            freed += b;
+            removed += n;
+        } else {
+            failed += 1;
+        }
+    }
+    Ok((freed, removed, failed))
+}
+
+fn journal_bytes() -> Option<u64> {
+    // "Archived and active journals take up 376.6M in the file system."
+    let out = linux::command("journalctl", &["--disk-usage"]).ok()?;
+    let word = out.split_whitespace().find(|w| w.ends_with(['B', 'K', 'M', 'G', 'T']))?;
+    let (num, unit) = word.split_at(word.len() - 1);
+    let num: f64 = num.parse().ok()?;
+    // systemd formata em múltiplos de 1024, mesmo escrevendo "M".
+    let mult = match unit {
+        "K" => 1024.0,
+        "M" => 1024.0 * 1024.0,
+        "G" => 1024.0 * 1024.0 * 1024.0,
+        "T" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => 1.0,
+    };
+    Some((num * mult) as u64)
+}
+
+fn orphan_packages() -> Vec<String> {
+    // `pacman -Qtdq` sai com 1 quando não há órfãos; isso não é erro.
+    match linux::command("pacman", &["-Qtdq"]) {
+        Ok(out) => out.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Pastas de cache que são de um app específico e voltam sozinhas quando ele roda.
+fn cache_hint(name: &str) -> &'static str {
+    let n = name.to_ascii_lowercase();
+    if n.contains("chromium") || n.contains("chrome") || n.contains("brave") || n.contains("firefox") || n.contains("mozilla") {
+        "cache do navegador; se ele estiver aberto, parte é recriada na hora"
+    } else if n == "yay" || n == "paru" {
+        "clones de AUR; o helper baixa de novo no próximo build"
+    } else if n == "pip" || n == "uv" || n == "pypoetry" || n == "npm" || n == "pnpm" || n == "yarn" || n == "go-build" || n == "cargo" {
+        "cache de pacotes de linguagem; o próximo install baixa de novo"
+    } else if n == "thumbnails" {
+        "miniaturas do gerenciador de arquivos; refeitas ao abrir as pastas"
+    } else if n.contains("mesa") || n.contains("nvidia") || n.contains("shader") || n.contains("radv") {
+        "cache de shaders; jogos podem engasgar no primeiro minuto depois de limpar"
+    } else if n.contains("huggingface") || n.contains("torch") || n.contains("whisper") || n.contains("models") {
+        "modelos de IA baixados; volta a baixar (pode ser gigas)"
+    } else {
+        "cache; o app recria o que precisar"
+    }
+}
+
+pub fn scan() -> Result<Report, String> {
+    let mut r = Report::default();
+    // ~/.cache/*: cada subpasta é um alvo próprio, para não apagar tudo de uma vez.
+    let cache = cache_home();
+    if let Ok(rd) = std::fs::read_dir(&cache) {
+        let mut dirs: Vec<Target> = rd
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .map(|e| {
+                let (bytes, items) = du(&e.path());
+                let name = e.file_name().to_string_lossy().into_owned();
+                Target {
+                    kind: Kind::UserDir,
+                    detail: cache_hint(&name).into(),
+                    name: format!("~/.cache/{name}"),
+                    path: e.path(),
+                    bytes,
+                    items,
+                }
+            })
+            .filter(|t| t.bytes >= 1 << 20)
+            .collect();
+        dirs.sort_by_key(|t| std::cmp::Reverse(t.bytes));
+        r.targets.extend(dirs);
+    } else {
+        r.warnings.push(format!("Sem acesso a {}", cache.display()));
+    }
+    let trash = data_home().join("Trash");
+    if trash.is_dir() {
+        let (bytes, items) = du(&trash);
+        r.targets.push(Target {
+            kind: Kind::Trash,
+            name: "Lixeira".into(),
+            path: trash,
+            detail: "arquivos apagados pelo gerenciador de arquivos; sem volta depois daqui".into(),
+            bytes,
+            items,
+        });
+    }
+    let pkg = PathBuf::from("/var/cache/pacman/pkg");
+    if pkg.is_dir() {
+        let (bytes, items) = du(&pkg);
+        r.targets.push(Target {
+            kind: Kind::Pacman,
+            name: "Cache do pacman".into(),
+            path: pkg,
+            detail: "paccache: mantém a versão instalada de cada pacote e apaga as antigas e as desinstaladas".into(),
+            bytes,
+            items,
+        });
+    }
+    if let Some(bytes) = journal_bytes() {
+        r.targets.push(Target {
+            kind: Kind::Journal,
+            name: "Journal do systemd".into(),
+            path: PathBuf::from("/var/log/journal"),
+            detail: "logs antigos; encolhe para 64 MB, o log atual continua".into(),
+            bytes,
+            items: 0,
+        });
+    }
+    let core = PathBuf::from("/var/lib/systemd/coredump");
+    if core.is_dir() {
+        let (bytes, items) = du(&core);
+        if items > 0 {
+            r.targets.push(Target {
+                kind: Kind::Coredump,
+                name: "Coredumps".into(),
+                path: core,
+                detail: "despejos de programas que travaram; só servem para depurar (coredumpctl)".into(),
+                bytes,
+                items,
+            });
+        }
+    }
+    let orphans = orphan_packages();
+    if !orphans.is_empty() {
+        r.targets.push(Target {
+            kind: Kind::Orphans,
+            name: format!("Pacotes órfãos ({})", orphans.len()),
+            path: PathBuf::from("/"),
+            detail: orphans.join(", "),
+            bytes: 0,
+            items: orphans.len() as u64,
+        });
+    }
+    Ok(r)
+}
+
+fn exe() -> Result<PathBuf, String> {
+    std::env::current_exe().map_err(|e| format!("executável do RamDog: {e}"))
+}
+
+/// Roda `pkexec ramdog --clean-helper <op>`. Sem timeout: a senha pode demorar.
+fn run_helper(op: &str) -> Result<String, String> {
+    let output = std::process::Command::new("pkexec")
+        .arg(exe()?)
+        .arg("--clean-helper")
+        .arg(op)
+        .env("LC_ALL", "C")
+        .output()
+        .map_err(|e| format!("pkexec: {e}"))?;
+    match output.status.code() {
+        Some(0) => Ok(String::from_utf8_lossy(&output.stdout).trim().to_string()),
+        Some(126) | Some(127) => Err("Autenticação cancelada ou negada".into()),
+        _ => {
+            let why = String::from_utf8_lossy(&output.stderr);
+            let why = if why.trim().is_empty() { String::from_utf8_lossy(&output.stdout) } else { why };
+            Err(format!("helper ({}): {}", output.status, why.trim().chars().take(400).collect::<String>()))
+        }
+    }
+}
+
+/// Executa uma limpeza e devolve a frase para o toast.
+pub fn apply(t: &Target) -> Result<String, String> {
+    match t.kind {
+        Kind::UserDir => {
+            let (freed, removed, failed) = remove_contents(&t.path)?;
+            Ok(done_msg(&t.name, freed, removed, failed))
+        }
+        Kind::Trash => {
+            let mut freed = 0;
+            let mut removed = 0;
+            let mut failed = 0;
+            for sub in ["files", "info", "expunged"] {
+                let p = t.path.join(sub);
+                if p.is_dir() {
+                    let (f, r, x) = remove_contents(&p)?;
+                    freed += f;
+                    removed += r;
+                    failed += x;
+                }
+            }
+            Ok(done_msg("Lixeira", freed, removed, failed))
+        }
+        k => run_helper(k.helper_op()),
+    }
+}
+
+fn done_msg(name: &str, freed: u64, removed: u64, failed: u64) -> String {
+    let mut s = format!("{name}: {} liberados, {removed} itens", fmt_bytes(freed));
+    if failed > 0 {
+        s.push_str(&format!(", {failed} em uso ou sem permissão"));
+    }
+    s
+}
+
+/// `sync` + `echo 3 > drop_caches` + `compact_memory`. Root.
+pub fn drop_caches() -> Result<String, String> {
+    run_helper("dropcaches")
+}
+
+/// Lado root. Só operações fixas; recalcula alvos aqui dentro em vez de confiar em args.
+pub fn helper(op: &str) -> Result<(), String> {
+    if unsafe { libc::geteuid() } != 0 {
+        return Err("O helper de limpeza precisa de autenticação administrativa".into());
+    }
+    let msg = match op {
+        "dropcaches" => {
+            let before = meminfo();
+            unsafe { libc::sync() };
+            std::fs::write("/proc/sys/vm/drop_caches", "3\n").map_err(|e| format!("drop_caches: {e}"))?;
+            let _ = std::fs::write("/proc/sys/vm/compact_memory", "1\n");
+            let after = meminfo();
+            format!("cache do kernel solto: {} → {} livres", fmt_bytes(before.free), fmt_bytes(after.free))
+        }
+        "paccache" => {
+            let before = du(Path::new("/var/cache/pacman/pkg")).0;
+            let a = linux::command("paccache", &["-rk1"])?;
+            let b = linux::command("paccache", &["-ruk0"])?;
+            let after = du(Path::new("/var/cache/pacman/pkg")).0;
+            let _ = (a, b);
+            format!("cache do pacman: {} liberados", fmt_bytes(before.saturating_sub(after)))
+        }
+        "journal" => {
+            let before = journal_bytes().unwrap_or(0);
+            linux::command("journalctl", &["--vacuum-size=64M"])?;
+            let after = journal_bytes().unwrap_or(0);
+            format!("journal: {} liberados", fmt_bytes(before.saturating_sub(after)))
+        }
+        "coredump" => {
+            let dir = Path::new("/var/lib/systemd/coredump");
+            let rd = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            let mut freed = 0;
+            let mut n = 0;
+            for e in rd.flatten() {
+                let Ok(md) = e.metadata() else { continue };
+                if md.is_file() && std::fs::remove_file(e.path()).is_ok() {
+                    freed += md.blocks() * 512;
+                    n += 1;
+                }
+            }
+            format!("coredumps: {} liberados, {n} arquivos", fmt_bytes(freed))
+        }
+        "orphans" => {
+            let orphans = orphan_packages();
+            if orphans.is_empty() {
+                "nenhum pacote órfão".into()
+            } else {
+                let mut args = vec!["-Rns", "--noconfirm"];
+                args.extend(orphans.iter().map(String::as_str));
+                let output = std::process::Command::new("pacman")
+                    .args(&args)
+                    .env("LC_ALL", "C")
+                    .output()
+                    .map_err(|e| format!("pacman: {e}"))?;
+                if !output.status.success() {
+                    return Err(format!("pacman -Rns: {}", String::from_utf8_lossy(&output.stderr).trim()));
+                }
+                format!("{} pacote(s) órfão(s) removidos: {}", orphans.len(), orphans.join(", "))
+            }
+        }
+        other => return Err(format!("operação desconhecida: {other}")),
+    };
+    println!("{msg}");
+    Ok(())
+}
+
+/// Uma linha da seção de processos: um app (grupo por identidade), com PIDs somados.
+struct AppRow {
+    key: String,
+    label: String,
+    pids: Vec<u32>,
+    ram: u64,
+    cpu: f32,
+    has_window: bool,
+    focused: bool,
+    zombie: bool,
+    leftover: Option<&'static str>,
+    locked: bool,
+    /// Pai de um zombie, quando o pai dá para encerrar.
+    parent: Option<(u32, String)>,
+}
+
+pub struct Clean {
+    scan: Job<Report>,
+    action: Job<String>,
+    drop: Job<String>,
+    /// Alvo (índice em `targets`) esperando confirmação.
+    pending: Option<usize>,
+    selected: HashMap<String, bool>,
+    last_result: Option<(String, bool)>,
+    min_ram: u64,
+}
+
+impl Default for Clean {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clean {
+    pub fn new() -> Self {
+        Self {
+            scan: Job::default(),
+            action: Job::default(),
+            drop: Job::default(),
+            pending: None,
+            selected: HashMap::new(),
+            last_result: None,
+            min_ram: 100 << 20,
+        }
+    }
+
+    fn rows(
+        &self,
+        procs: &[ProcInfo],
+        mem: &dyn Fn(&ProcInfo) -> u64,
+        locked: &dyn Fn(&ProcInfo) -> bool,
+    ) -> Vec<AppRow> {
+        let by_pid: HashMap<u32, &ProcInfo> = procs.iter().map(|p| (p.pid, p)).collect();
+        let me = std::process::id();
+        let mut groups: HashMap<String, AppRow> = HashMap::new();
+        for p in procs {
+            if p.pid == me || p.pid <= 2 {
+                continue;
+            }
+            let zombie = p.kernel_state == Some('Z');
+            let leftover = identity::leftover_reason(&p.cmdline, p.kernel_state, p.has_window);
+            let ram = mem(p);
+            if !zombie && leftover.is_none() && ram < self.min_ram {
+                continue;
+            }
+            let id = identity::of(p);
+            // Zombie não soma no app: é uma linha própria, com o pai apontado.
+            let key = if zombie { format!("zombie:{}", p.pid) } else { id.key.clone() };
+            let is_locked = locked(p);
+            let parent = if zombie {
+                by_pid.get(&p.raw_ppid).filter(|pp| !locked(pp) && pp.pid > 1).map(|pp| (pp.pid, identity::of(pp).label))
+            } else {
+                None
+            };
+            let row = groups.entry(key.clone()).or_insert_with(|| AppRow {
+                key,
+                label: if zombie { format!("{} (zombie)", p.name) } else { id.label.clone() },
+                pids: Vec::new(),
+                ram: 0,
+                cpu: 0.0,
+                has_window: false,
+                focused: false,
+                zombie,
+                leftover: None,
+                locked: false,
+                parent,
+            });
+            row.pids.push(p.pid);
+            row.ram += ram;
+            row.cpu += p.cpu_pct;
+            row.has_window |= p.has_window;
+            row.focused |= p.focused;
+            row.locked |= is_locked;
+            if row.leftover.is_none() {
+                row.leftover = leftover;
+            }
+        }
+        let mut rows: Vec<AppRow> = groups.into_values().collect();
+        // Sobras primeiro; depois por RAM. Quem tem janela vai para o fim: é o que o usuário
+        // está usando, não sobra.
+        rows.sort_by(|a, b| {
+            let rank = |r: &AppRow| (!(r.zombie || r.leftover.is_some()), r.has_window);
+            rank(a).cmp(&rank(b)).then(b.ram.cmp(&a.ram))
+        });
+        rows
+    }
+
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        procs: &[ProcInfo],
+        mem: &dyn Fn(&ProcInfo) -> u64,
+        locked: &dyn Fn(&ProcInfo) -> bool,
+    ) -> Vec<CleanOut> {
+        let mut out = Vec::new();
+        self.scan.poll();
+        if self.action.poll() {
+            match (&self.action.error, &self.action.value) {
+                (Some(e), _) => self.last_result = Some((e.clone(), true)),
+                (None, msg) if !msg.is_empty() => self.last_result = Some((msg.clone(), false)),
+                _ => {}
+            }
+            self.action.value.clear();
+            self.scan.start(scan);
+        }
+        if self.drop.poll() {
+            match (&self.drop.error, &self.drop.value) {
+                (Some(e), _) => self.last_result = Some((e.clone(), true)),
+                (None, msg) if !msg.is_empty() => self.last_result = Some((msg.clone(), false)),
+                _ => {}
+            }
+            self.drop.value.clear();
+        }
+        if self.scan.due(60) {
+            self.scan.start(scan);
+        }
+        if let Some((msg, err)) = self.last_result.take() {
+            out.push(CleanOut::Toast(msg, err));
+        }
+
+        crate::kit::intro(ui, "O que sobrou rodando sem ninguém usar, e o que está ocupando disco sem precisar. Nada aqui é apagado sem um clique de confirmação; encerrar processo é na hora, como na lista.");
+        ui.add_space(8.0);
+
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            self.ui_memory(ui, procs);
+            ui.add_space(10.0);
+            self.ui_processes(ui, procs, mem, locked, &mut out);
+            ui.add_space(10.0);
+            self.ui_disk(ui);
+        });
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+        out
+    }
+
+    fn ui_memory(&mut self, ui: &mut egui::Ui, _procs: &[ProcInfo]) {
+        // A leitura de meminfo é barata; refaz a cada frame para a barra acompanhar o kill.
+        let m = meminfo();
+        section(ui, "RAM", |ui| {
+            let total = m.total.max(1);
+            let used = m.used();
+            let drop = m.droppable().min(total.saturating_sub(used));
+            let w = ui.available_width().min(720.0);
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 14.0), egui::Sense::hover());
+            let p = ui.painter();
+            p.rect_filled(rect, 3.0, SURFACE);
+            let x_used = rect.left() + rect.width() * used as f32 / total as f32;
+            let x_cache = x_used + rect.width() * drop as f32 / total as f32;
+            p.rect_filled(egui::Rect::from_min_max(rect.min, egui::pos2(x_used, rect.max.y)), 3.0, ACCENT);
+            p.rect_filled(
+                egui::Rect::from_min_max(egui::pos2(x_used, rect.min.y), egui::pos2(x_cache, rect.max.y)),
+                0.0,
+                ACCENT.gamma_multiply(0.35),
+            );
+            p.rect_stroke(rect, 3.0, egui::Stroke::new(1.0_f32, LINE), egui::StrokeKind::Inside);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(format!("{} em uso", fmt_bytes(used))).color(ACCENT).strong());
+                ui.label(RichText::new("·").color(MUTED));
+                ui.label(format!("{} de cache do kernel", fmt_bytes(drop)));
+                ui.label(RichText::new("·").color(MUTED));
+                ui.label(format!("{} disponíveis de {}", fmt_bytes(m.available), fmt_bytes(m.total)));
+                if m.swap_total > 0 {
+                    ui.label(RichText::new("·").color(MUTED));
+                    ui.label(format!("swap {} / {}", fmt_bytes(m.swap_total - m.swap_free), fmt_bytes(m.swap_total)));
+                }
+            });
+            ui.horizontal(|ui| {
+                let b = ui.add_enabled(!self.drop.busy(), crate::kit::button("Soltar cache do kernel"));
+                if b.on_hover_text("sync + drop_caches + compact_memory. Pede senha.\n\nO kernel já solta esse cache sozinho quando um app precisa; isso aqui só antecipa. Vale antes de um jogo ou pra ver a RAM \"de verdade\". Arquivos recém-usados voltam a ser lidos do disco.").clicked() {
+                    self.drop.start(drop_caches);
+                }
+                self.drop.status(ui);
+            });
+        });
+    }
+
+    fn ui_processes(
+        &mut self,
+        ui: &mut egui::Ui,
+        procs: &[ProcInfo],
+        mem: &dyn Fn(&ProcInfo) -> u64,
+        locked: &dyn Fn(&ProcInfo) -> bool,
+        out: &mut Vec<CleanOut>,
+    ) {
+        let rows = self.rows(procs, mem, locked);
+        let alive: std::collections::HashSet<&str> = rows.iter().map(|r| r.key.as_str()).collect();
+        self.selected.retain(|k, _| alive.contains(k.as_str()));
+        let sel_pids: Vec<u32> = rows
+            .iter()
+            .filter(|r| !r.locked && !r.zombie && self.selected.get(&r.key).copied().unwrap_or(false))
+            .flat_map(|r| r.pids.iter().copied())
+            .collect();
+        let sel_ram: u64 = rows
+            .iter()
+            .filter(|r| !r.locked && !r.zombie && self.selected.get(&r.key).copied().unwrap_or(false))
+            .map(|r| r.ram)
+            .sum();
+        let n_leftover = rows.iter().filter(|r| r.zombie || r.leftover.is_some()).count();
+        let title = format!("Processos · {} apps acima de {}", rows.len(), fmt_bytes_short(self.min_ram));
+        section(ui, &title, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Marca o que não está usando e encerra de uma vez. Sobras e zombies vêm primeiro; quem tem janela aberta fica no fim.").color(MUTED));
+            });
+            ui.horizontal(|ui| {
+                ui.label("mostrar acima de");
+                let mut mb = (self.min_ram >> 20) as u32;
+                if ui.add(egui::DragValue::new(&mut mb).range(0..=8192).suffix(" MB").speed(10)).changed() {
+                    self.min_ram = (mb as u64) << 20;
+                }
+                if n_leftover > 0 && ui.add(crate::kit::button(&format!("Marcar sobras ({n_leftover})"))).on_hover_text("Zombies ficam de fora: sinal neles não faz nada, o que resolve é o pai.").clicked() {
+                    for r in &rows {
+                        if r.leftover.is_some() && !r.zombie && !r.locked {
+                            self.selected.insert(r.key.clone(), true);
+                        }
+                    }
+                }
+                if ui.add(crate::kit::button("Marcar sem janela")).on_hover_text("Tudo que não tem janela aberta e não é do sistema").clicked() {
+                    for r in &rows {
+                        if !r.has_window && !r.locked && !r.zombie {
+                            self.selected.insert(r.key.clone(), true);
+                        }
+                    }
+                }
+                if ui.add(crate::kit::button("Desmarcar")).clicked() {
+                    self.selected.clear();
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let label = if sel_pids.is_empty() {
+                        "Encerrar selecionados".to_string()
+                    } else {
+                        format!("Encerrar selecionados · {} PIDs · {}", sel_pids.len(), fmt_bytes(sel_ram))
+                    };
+                    if ui.add_enabled(!sel_pids.is_empty(), crate::kit::primary(&label)).clicked() {
+                        out.push(CleanOut::Kill(sel_pids.clone()));
+                        self.selected.clear();
+                    }
+                });
+            });
+            ui.add_space(4.0);
+            if rows.is_empty() {
+                ui.label(RichText::new("Nada acima do corte. Sobe o filtro ou baixa o corte de RAM.").color(MUTED));
+                return;
+            }
+            egui::Grid::new("clean-procs").num_columns(6).spacing([12.0, 4.0]).striped(true).show(ui, |ui| {
+                ui.label(RichText::new("").small());
+                ui.label(RichText::new("App").color(MUTED).small());
+                ui.label(RichText::new("PIDs").color(MUTED).small());
+                ui.label(RichText::new("RAM").color(MUTED).small());
+                ui.label(RichText::new("CPU").color(MUTED).small());
+                ui.label(RichText::new("Estado").color(MUTED).small());
+                ui.end_row();
+                for r in &rows {
+                    let mut on = self.selected.get(&r.key).copied().unwrap_or(false);
+                    if ui.add_enabled(!r.locked && !r.zombie, egui::Checkbox::without_text(&mut on)).changed() {
+                        self.selected.insert(r.key.clone(), on);
+                    }
+                    ui.label(&r.label);
+                    ui.label(format!("{}", r.pids.len()));
+                    ui.label(fmt_bytes_short(r.ram));
+                    ui.label(if r.cpu >= 0.05 { format!("{:.1}%", r.cpu) } else { "–".into() });
+                    ui.horizontal(|ui| {
+                        let (text, color) = if r.locked {
+                            ("protegido", MUTED)
+                        } else if r.zombie {
+                            ("zombie", Color32::from_rgb(230, 120, 120))
+                        } else if r.leftover.is_some() {
+                            ("sobra", Color32::from_rgb(230, 170, 90))
+                        } else if r.focused {
+                            ("em foco", Color32::from_rgb(120, 200, 140))
+                        } else if r.has_window {
+                            ("janela", Color32::from_rgb(120, 200, 140))
+                        } else {
+                            ("fundo", MUTED)
+                        };
+                        let l = crate::kit::badge(ui, text, color);
+                        if let Some(why) = r.leftover {
+                            l.on_hover_text(why);
+                        }
+                        if r.zombie {
+                            match &r.parent {
+                                Some((ppid, pname)) => {
+                                    if ui.small_button(format!("encerrar pai · {pname} ({ppid})")).on_hover_text("Zombie não morre com sinal: já está morto. Some quando o pai recolhe o estado ou quando o pai cai.").clicked() {
+                                        out.push(CleanOut::Kill(vec![*ppid]));
+                                    }
+                                }
+                                None => {
+                                    ui.label(RichText::new("pai protegido").color(MUTED).small());
+                                }
+                            }
+                        } else if !r.locked && ui.small_button("✖").on_hover_text("Encerrar agora").clicked() {
+                            out.push(CleanOut::Kill(r.pids.clone()));
+                        }
+                    });
+                    ui.end_row();
+                }
+            });
+        });
+    }
+
+    fn ui_disk(&mut self, ui: &mut egui::Ui) {
+        let total: u64 = self.scan.value.targets.iter().map(|t| t.bytes).sum();
+        let title = if self.scan.value.targets.is_empty() {
+            "Disco".to_string()
+        } else {
+            format!("Disco · {} recuperáveis", fmt_bytes(total))
+        };
+        section(ui, &title, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Caches do usuário, lixeira, cache do pacman, journal, coredumps e órfãos. Itens com 🔒 pedem senha (pkexec).").color(MUTED));
+                if ui.add_enabled(!self.scan.busy(), crate::kit::button("Atualizar")).clicked() {
+                    self.scan.start(scan);
+                }
+                self.scan.status(ui);
+                self.action.status(ui);
+            });
+            for w in &self.scan.value.warnings {
+                ui.colored_label(Color32::YELLOW, w);
+            }
+            if self.scan.value.targets.is_empty() && !self.scan.busy() {
+                ui.label(RichText::new("Nada acima de 1 MB para limpar.").color(MUTED));
+                return;
+            }
+            ui.add_space(4.0);
+            let targets = self.scan.value.targets.clone();
+            // O Grid dá à coluna de texto só o que sobra depois dos botões; sem largura fixa
+            // a descrição vira "cach…".
+            let detail_w = (ui.available_width() - 560.0).clamp(200.0, 700.0);
+            egui::Grid::new("clean-disk").num_columns(4).spacing([12.0, 4.0]).striped(true).show(ui, |ui| {
+                ui.label(RichText::new("Alvo").color(MUTED).small());
+                ui.label(RichText::new("Tamanho").color(MUTED).small());
+                ui.label(RichText::new("O que é").color(MUTED).small());
+                ui.label("");
+                ui.end_row();
+                for (i, t) in targets.iter().enumerate() {
+                    let name = if t.kind.needs_root() { format!("🔒 {}", t.name) } else { t.name.clone() };
+                    ui.label(name).on_hover_text(t.path.display().to_string());
+                    ui.label(if t.bytes > 0 { fmt_bytes_short(t.bytes) } else { "–".into() });
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(detail_w, 18.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.add(egui::Label::new(RichText::new(&t.detail).color(MUTED)).truncate())
+                                .on_hover_text(&t.detail);
+                        },
+                    );
+                    ui.horizontal(|ui| {
+                        if self.pending == Some(i) {
+                            let what = match t.kind {
+                                Kind::Orphans => format!("Remover {} pacote(s)?", t.items),
+                                Kind::Journal => "Encolher para 64 MB?".to_string(),
+                                _ => format!("Apagar {} ({} itens)?", fmt_bytes_short(t.bytes), t.items),
+                            };
+                            ui.label(RichText::new(what).color(Color32::from_rgb(230, 170, 90)));
+                            if ui.add(crate::kit::danger("Sim")).clicked() {
+                                let t = t.clone();
+                                self.action.start(move || apply(&t));
+                                self.pending = None;
+                            }
+                            if ui.add(crate::kit::button("Não")).clicked() {
+                                self.pending = None;
+                            }
+                        } else if ui.add_enabled(!self.action.busy(), crate::kit::button("Limpar")).clicked() {
+                            self.pending = Some(i);
+                        }
+                    });
+                    ui.end_row();
+                }
+            });
+        });
+    }
+}
+
+/// Bloco com título: caixa do fundo da janela dentro do card, como as linhas dos addons.
+fn section(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::new()
+        .fill(crate::app::BG)
+        .corner_radius(crate::kit::ROW_R)
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(RichText::new(title).strong().size(14.0));
+            ui.add_space(4.0);
+            body(ui);
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meminfo_parses_kb_into_bytes() {
+        let m = parse_meminfo("MemTotal:  1000 kB\nMemAvailable: 400 kB\nCached: 300 kB\nShmem: 50 kB\nSwapTotal: 0 kB\n");
+        assert_eq!(m.total, 1_024_000);
+        assert_eq!(m.used(), 600 * 1024);
+        assert_eq!(m.droppable(), 250 * 1024);
+    }
+
+    #[test]
+    fn du_and_remove_contents_keep_the_dir_and_skip_symlink_targets() {
+        let dir = std::env::temp_dir().join(format!("ramdog-clean-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("a/b")).unwrap();
+        std::fs::write(dir.join("a/b/f"), vec![0u8; 8192]).unwrap();
+        std::fs::write(dir.join("g"), b"x").unwrap();
+        let outside = std::env::temp_dir().join(format!("ramdog-clean-out-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("keep"), b"keep").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("link")).unwrap();
+        let (bytes, items) = du(&dir);
+        assert!(bytes >= 8192, "{bytes}");
+        assert_eq!(items, 3);
+        let (_, removed, failed) = remove_contents(&dir).unwrap();
+        assert_eq!(removed, 3);
+        assert_eq!(failed, 0);
+        assert!(dir.is_dir());
+        assert!(std::fs::read_dir(&dir).unwrap().next().is_none());
+        assert!(outside.join("keep").is_file(), "symlink alvo não pode ser apagado");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn helper_refuses_unknown_ops_without_root() {
+        assert!(helper("rm-rf").is_err());
+    }
+}

@@ -105,6 +105,10 @@ pub struct Launcher {
     pub init_cwd: Option<String>,
     /// npm_lifecycle_event ("dev", "start"...).
     pub npm_script: Option<String>,
+    /// Steam / Proton: STEAM_COMPAT_APP_ID, SteamAppId, ou extraído do prefixo.
+    pub steam_app_id: Option<u32>,
+    /// WINEPREFIX / STEAM_COMPAT_DATA_PATH.
+    pub wine_prefix: Option<String>,
 }
 
 impl Launcher {
@@ -139,7 +143,8 @@ pub struct ProcInfo {
     pub working_set: u64,
     pub commit: u64,
     pub threads: u32,
-    pub handles: u32,
+    /// Handle/FD count; None means unavailable or not sampled yet.
+    pub handles: Option<u32>,
     pub session: u32,
     /// FILETIME (100 ns desde 1601)
     pub create_time: i64,
@@ -152,8 +157,69 @@ pub struct ProcInfo {
     /// Bytes/s de disco (leitura + escrita), delta entre amostras.
     pub disk_bps: f64,
     /// % de uso de GPU somado entre engines (preenchido por `gpu::Gpu`).
+    /// Zero também representa “sem leitura”; use `gpu_load` para distinguir.
     pub gpu_pct: f32,
+    /// Carga de GPU deste PID. `None` = o driver não falou; `Some(0.0)` = ocioso.
+    pub gpu_load: Option<f32>,
+    /// VRAM atribuída a este PID, quando o driver expõe.
+    pub gpu_vram: Option<u64>,
+    /// Estado do kernel (`R`/`S`/`D`/`Z`/…), se amostrado.
+    pub kernel_state: Option<char>,
+    pub has_window: bool,
+    pub focused: bool,
+    pub window_title: Option<String>,
+    pub window_class: Option<String>,
     pub launcher: Launcher,
+}
+
+impl Default for ProcInfo {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            ppid: 0,
+            raw_ppid: 0,
+            name: String::new(),
+            name_lower: String::new(),
+            exe_path: String::new(),
+            cmdline: String::new(),
+            #[cfg(target_os = "linux")]
+            linux_memory: None,
+            private_ws: 0,
+            working_set: 0,
+            commit: 0,
+            threads: 1,
+            handles: None,
+            session: 0,
+            create_time: 0,
+            cpu_pct: 0.0,
+            cpu_raw_pct: 0.0,
+            disk_bps: 0.0,
+            gpu_pct: 0.0,
+            gpu_load: None,
+            gpu_vram: None,
+            kernel_state: None,
+            has_window: false,
+            focused: false,
+            window_title: None,
+            window_class: None,
+            launcher: Launcher::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KillOutcome {
+    Signaled,
+    AlreadyGone,
+    Denied,
+    Invalid,
+    Failed(String),
+}
+
+impl KillOutcome {
+    pub fn is_done(&self) -> bool {
+        matches!(self, Self::Signaled | Self::AlreadyGone)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -382,13 +448,20 @@ impl Sampler {
                 working_set: r.working_set,
                 commit: r.commit,
                 threads: r.threads,
-                handles: r.handles,
+                handles: Some(r.handles),
                 session: r.session,
                 create_time: r.create_time,
                 cpu_pct,
                 cpu_raw_pct,
                 disk_bps,
                 gpu_pct: 0.0,
+                gpu_load: None,
+                gpu_vram: None,
+                kernel_state: None,
+                has_window: false,
+                focused: false,
+                window_title: None,
+                window_class: None,
                 launcher: st.launcher,
             });
         }
@@ -751,28 +824,52 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
             "CONEMUPID" => set_host("ConEmu", 1, &mut l),
             "INIT_CWD" => l.init_cwd = Some(v.to_string()),
             "NPM_LIFECYCLE_EVENT" => l.npm_script = Some(v.to_string()),
+            "STEAM_COMPAT_APP_ID" | "STEAMAPPID" | "STEAM_GAME" => {
+                if l.steam_app_id.is_none() {
+                    l.steam_app_id = v.trim().parse().ok().filter(|n| *n > 0);
+                }
+            }
+            "WINEPREFIX" | "STEAM_COMPAT_DATA_PATH" => {
+                if l.wine_prefix.is_none() && !v.trim().is_empty() {
+                    l.wine_prefix = Some(v.to_string());
+                }
+            }
             _ => {}
+        }
+    }
+    if l.steam_app_id.is_none() {
+        if let Some(prefix) = &l.wine_prefix {
+            if let Some(rest) = prefix.split("compatdata/").nth(1) {
+                let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                l.steam_app_id = digits.parse().ok().filter(|n| *n > 0);
+            }
         }
     }
     l
 }
 
 #[cfg(windows)]
-pub fn kill(pid: u32) -> Result<(), String> {
+pub fn kill(pid: u32) -> KillOutcome {
     unsafe {
-        let h = OpenProcess(PROCESS_TERMINATE, false, pid).map_err(|e| fmt_err(&e))?;
+        let h = match OpenProcess(PROCESS_TERMINATE, false, pid) {
+            Ok(h) => h,
+            Err(e) => return win_kill_err(&e),
+        };
         let h = OwnedHandle(h);
-        TerminateProcess(h.0, 1).map_err(|e| fmt_err(&e))
+        match TerminateProcess(h.0, 1) {
+            Ok(()) => KillOutcome::Signaled,
+            Err(e) => win_kill_err(&e),
+        }
     }
 }
 
 #[cfg(windows)]
-fn fmt_err(e: &windows::core::Error) -> String {
+fn win_kill_err(e: &windows::core::Error) -> KillOutcome {
     let code = e.code().0 as u32 & 0xFFFF;
     match code {
-        5 => "acesso negado (tente reabrir como admin)".to_string(),
-        87 => "parâmetro inválido (processo já encerrado?)".to_string(),
-        _ => e.message().trim().to_string(),
+        5 => KillOutcome::Denied,
+        87 => KillOutcome::AlreadyGone,
+        _ => KillOutcome::Failed(e.message().trim().to_string()),
     }
 }
 
@@ -804,7 +901,12 @@ pub fn enable_debug_privilege() {
 #[path = "procs_unix.rs"]
 mod procs_unix;
 #[cfg(not(windows))]
-pub use procs_unix::{enable_debug_privilege, is_admin, kill, mem_status, Sampler};
+pub use procs_unix::{enable_debug_privilege, is_admin, kill, mem_status, terminate, Sampler};
+
+#[cfg(windows)]
+pub fn terminate(pid: u32) -> KillOutcome {
+    kill(pid)
+}
 
 /// FILETIME atual (100 ns desde 1601-01-01 UTC).
 pub fn now_filetime() -> i64 {

@@ -1,7 +1,7 @@
 //! Métricas de sistema além de RAM: CPU total, disco, GPU.
 //!
 //! Windows: PDH + NVML + GetSystemTimes (ver `metrics_win`).
-//! Linux: `sysinfo` + `/proc/diskstats` (%util e bytes/s). GPU/NVML ficam `None`.
+//! Linux: `/proc/stat` + `/proc/diskstats` (%util e bytes/s). GPU via nvidia-smi/DRM.
 //! macOS: `sysinfo`. Disco % e GPU ficam `None`.
 
 use std::collections::HashMap;

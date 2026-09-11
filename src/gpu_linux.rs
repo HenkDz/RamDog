@@ -28,7 +28,7 @@ impl Reader {
                     *target = sample;
                 }
                 drop(latest);
-                std::thread::sleep(Duration::from_millis(800));
+                std::thread::sleep(Duration::from_millis(1500));
             }
         });
         Self(latest)
@@ -174,7 +174,15 @@ pub fn collect(drm: &mut DrmCounters) -> Sample {
             sample.cards.push(card);
         }
     }
-    let (load, memory) = drm.sample();
+    let need_drm_proc = sample
+        .cards
+        .iter()
+        .any(|c| !c.name.to_ascii_lowercase().contains("nvidia"));
+    let (load, memory) = if need_drm_proc {
+        drm.sample()
+    } else {
+        (HashMap::new(), HashMap::new())
+    };
     sample.process_supported |= !drm.previous.is_empty();
     for (pid, pct) in load {
         sample.by_pid.entry(pid).or_insert(pct);
@@ -196,6 +204,11 @@ fn read_u64(path: &Path) -> Option<u64> {
 pub struct DrmCounters {
     previous: HashMap<String, (u64, Instant)>,
 }
+pub fn is_drm_link(link: &str) -> bool {
+    let link = link.trim();
+    (link.contains("/dri/") || link.starts_with("/dev/dri")) && !link.contains("nvidia")
+}
+
 impl DrmCounters {
     fn sample(&mut self) -> (HashMap<u32, f32>, HashMap<u32, u64>) {
         let mut seen = HashSet::new();
@@ -210,11 +223,20 @@ impl DrmCounters {
             let Ok(pid) = process.file_name().to_string_lossy().parse::<u32>() else {
                 continue;
             };
-            let Ok(fds) = std::fs::read_dir(process.path().join("fdinfo")) else {
+            let fd_dir = process.path().join("fd");
+            let Ok(fds) = std::fs::read_dir(&fd_dir) else {
                 continue;
             };
             for fd in fds.flatten() {
-                let Ok(text) = std::fs::read_to_string(fd.path()) else {
+                let name = fd.file_name();
+                let Ok(link) = std::fs::read_link(fd_dir.join(&name)) else {
+                    continue;
+                };
+                if !is_drm_link(&link.to_string_lossy()) {
+                    continue;
+                }
+                let Ok(text) = std::fs::read_to_string(process.path().join("fdinfo").join(&name))
+                else {
                     continue;
                 };
                 let fields: HashMap<_, _> = text
@@ -311,5 +333,16 @@ mod tests {
         assert_eq!(load.get(&42), Some(&20.0));
         assert!(!load.contains_key(&43));
         assert_eq!(memory[&43], 5 * 1048576);
+    }
+
+    #[test]
+    fn drm_links_are_dri_not_regular_or_nvidia() {
+        assert!(is_drm_link("/dev/dri/renderD128"));
+        assert!(is_drm_link("/dev/dri/card1"));
+        assert!(!is_drm_link("/dev/nvidia0"));
+        assert!(!is_drm_link("/dev/nvidiactl"));
+        assert!(!is_drm_link("/dev/null"));
+        assert!(!is_drm_link("socket:[123]"));
+        assert!(!is_drm_link("/usr/lib/libc.so.6"));
     }
 }

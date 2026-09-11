@@ -73,7 +73,12 @@ pub fn spawn(ctx: egui::Context, interval_ms: u64) -> SamplerHandle {
                     let sys = metrics.sample();
                     let gpu_per_proc = metrics.gpu_per_process_available();
                     for p in procs.iter_mut() {
-                        p.gpu_pct = sys.gpu_by_pid.get(&p.pid).copied().unwrap_or(0.0);
+                        p.gpu_load = sys.gpu_by_pid.get(&p.pid).copied();
+                        p.gpu_pct = p.gpu_load.unwrap_or(0.0);
+                        #[cfg(target_os = "linux")]
+                        {
+                            p.gpu_vram = sys.gpu_linux.memory_by_pid.get(&p.pid).copied();
+                        }
                     }
                     let mut new_icons = Vec::new();
                     for p in &procs {

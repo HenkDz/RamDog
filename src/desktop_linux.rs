@@ -2,10 +2,19 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
+
+#[derive(Clone, Debug, Default)]
+pub struct WindowInfo {
+    pub title: String,
+    pub class: String,
+    pub mapped: bool,
+}
+
 #[derive(Clone, Default)]
 struct Desktop {
     windows: Option<HashSet<u32>>,
     focused: Option<u32>,
+    by_pid: HashMap<u32, WindowInfo>,
 }
 fn desktop() -> Desktop {
     static CACHE: OnceLock<Arc<Mutex<Desktop>>> = OnceLock::new();
@@ -13,21 +22,41 @@ fn desktop() -> Desktop {
         let cache = Arc::new(Mutex::new(Desktop::default()));
         let target = cache.clone();
         std::thread::spawn(move || loop {
-            let windows = crate::linux::command("hyprctl", &["-j", "clients"])
+            let parsed = crate::linux::command("hyprctl", &["-j", "clients"])
                 .ok()
-                .and_then(|s| serde_json::from_str::<Vec<serde_json::Value>>(&s).ok())
-                .map(|v| {
-                    v.iter()
-                        .filter(|w| w["mapped"].as_bool() == Some(true))
-                        .filter_map(|w| w["pid"].as_u64().map(|n| n as u32))
-                        .collect()
-                });
+                .and_then(|s| serde_json::from_str::<Vec<serde_json::Value>>(&s).ok());
+            let mut by_pid = HashMap::new();
+            let windows = parsed.as_ref().map(|v| {
+                let mut set = HashSet::new();
+                for w in v {
+                    let Some(pid) = w["pid"].as_u64().map(|n| n as u32) else { continue };
+                    let mapped = w["mapped"].as_bool().unwrap_or(true);
+                    let info = WindowInfo {
+                        title: w["title"].as_str().unwrap_or("").to_string(),
+                        class: w["class"].as_str().unwrap_or("").to_string(),
+                        mapped,
+                    };
+                    if mapped {
+                        set.insert(pid);
+                    }
+                    let richer = !info.title.is_empty() || !info.class.is_empty();
+                    by_pid
+                        .entry(pid)
+                        .and_modify(|old: &mut WindowInfo| {
+                            if richer && old.title.is_empty() {
+                                *old = info.clone();
+                            }
+                        })
+                        .or_insert(info);
+                }
+                set
+            });
             let focused = crate::linux::command("hyprctl", &["-j", "activewindow"])
                 .ok()
                 .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
                 .and_then(|w| w["pid"].as_u64().map(|n| n as u32));
             if let Ok(mut d) = target.lock() {
-                *d = Desktop { windows, focused };
+                *d = Desktop { windows, focused, by_pid };
             }
             std::thread::sleep(std::time::Duration::from_secs(2));
         });
@@ -40,6 +69,9 @@ pub fn windowed_pids() -> Option<HashSet<u32>> {
 }
 pub fn focused_pid() -> Option<u32> {
     desktop().focused
+}
+pub fn windows_by_pid() -> HashMap<u32, WindowInfo> {
+    desktop().by_pid
 }
 fn data_dirs() -> Vec<PathBuf> {
     let mut dirs = vec![std::env::var_os("XDG_DATA_HOME")

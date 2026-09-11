@@ -21,6 +21,7 @@ mod boot;
 mod boot;
 mod categories;
 mod config;
+mod identity;
 #[cfg(windows)]
 mod drains;
 #[cfg(target_os = "linux")]
@@ -29,8 +30,15 @@ mod drains;
 #[cfg(not(any(windows, target_os = "linux")))]
 #[path = "drains_stub.rs"]
 mod drains;
+#[cfg(target_os = "linux")]
+#[path = "clean_linux.rs"]
+mod clean;
+#[cfg(not(target_os = "linux"))]
+#[path = "clean_stub.rs"]
+mod clean;
 mod hwtemp;
 mod icons;
+mod kit;
 mod knowledge;
 mod metrics;
 mod procs;
@@ -51,6 +59,10 @@ mod usage;
 fn main() -> eframe::Result<()> {
     #[cfg(target_os = "linux")]
     {
+        if std::env::args().nth(1).as_deref()==Some("--clean-helper") {
+            let op=std::env::args().nth(2).unwrap_or_default();
+            if let Err(error)=clean::helper(&op){eprintln!("{error}");std::process::exit(1);}return Ok(());
+        }
         if std::env::args().nth(1).as_deref()==Some("--fan-helper") {
             let result=std::env::args().nth(2).and_then(|p|p.parse().ok()).ok_or_else(||"PID inválido".to_string()).and_then(fans_linux::helper);
             if let Err(error)=result{eprintln!("{error}");std::process::exit(1);}return Ok(());
