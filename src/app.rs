@@ -16,6 +16,7 @@ use crate::drains::{DrainOut, Drains};
 use crate::hwtemp::HwTemp;
 use crate::knowledge;
 use crate::metrics::SysSample;
+use crate::pressure::{self, StealKind};
 use crate::procs::{self, KernelMem, MemStatus, ProcInfo};
 use crate::sampler::{self, SamplerHandle};
 use crate::screens::{ScreenOut, Screens};
@@ -77,6 +78,8 @@ enum SortKey {
     Age,
     Parent,
     State,
+    /// Sobra / loop / CPU barata primeiro; depois % de CPU. É o que a faixa "Disputa" liga.
+    Steal,
 }
 
 #[derive(Clone, Copy)]
@@ -219,6 +222,9 @@ pub struct App {
     cats: HashMap<u32, Category>,
     subtree: HashMap<u32, u64>,
     subtree_count: HashMap<u32, usize>,
+    /// CPU da subárvore (% da máquina). Sem isso a Árvore ordenava por CPU do pai
+    /// e um app com o consumo espalhado nos filhos afundava na lista.
+    subtree_cpu: HashMap<u32, f32>,
     mem: MemStatus,
     kernel: KernelMem,
 
@@ -325,6 +331,7 @@ impl App {
             cats: HashMap::new(),
             subtree: HashMap::new(),
             subtree_count: HashMap::new(),
+            subtree_cpu: HashMap::new(),
             mem: MemStatus::default(),
             kernel: KernelMem::default(),
             services: HashMap::new(),
@@ -446,31 +453,41 @@ impl App {
         // soma de subárvore (memo por DFS)
         self.subtree.clear();
         self.subtree_count.clear();
+        self.subtree_cpu.clear();
         let pids: Vec<u32> = self.procs.iter().map(|p| p.pid).collect();
         for pid in pids {
             self.subtree_total(pid, 0);
         }
     }
 
-    fn subtree_total(&mut self, pid: u32, depth: usize) -> (u64, usize) {
-        if let (Some(&t), Some(&c)) = (self.subtree.get(&pid), self.subtree_count.get(&pid)) {
-            return (t, c);
+    fn subtree_total(&mut self, pid: u32, depth: usize) -> (u64, usize, f32) {
+        if let (Some(&t), Some(&c), Some(&u)) =
+            (self.subtree.get(&pid), self.subtree_count.get(&pid), self.subtree_cpu.get(&pid))
+        {
+            return (t, c, u);
         }
         let m = self.cfg.mem_metric;
-        let own = self.by_pid.get(&pid).map(|&i| Self::metric_of(m, &self.procs[i])).unwrap_or(0);
+        let (own, own_cpu) = self
+            .by_pid
+            .get(&pid)
+            .map(|&i| (Self::metric_of(m, &self.procs[i]), self.procs[i].cpu_pct))
+            .unwrap_or((0, 0.0));
         let mut total = own;
         let mut count = 1usize;
+        let mut cpu = own_cpu;
         if depth < 128 {
             let kids = self.children.get(&pid).cloned().unwrap_or_default();
             for k in kids {
-                let (t, c) = self.subtree_total(k, depth + 1);
+                let (t, c, u) = self.subtree_total(k, depth + 1);
                 total += t;
                 count += c;
+                cpu += u;
             }
         }
         self.subtree.insert(pid, total);
         self.subtree_count.insert(pid, count);
-        (total, count)
+        self.subtree_cpu.insert(pid, cpu);
+        (total, count, cpu)
     }
 
     fn gpu_pid_available(&self,pid:u32)->bool {
@@ -699,27 +716,53 @@ impl App {
                 return (origin, None, tip, true);
             }
         }
+        let l = &p.launcher;
+        let unit = l.unit_label();
         let mut cur = p.ppid;
         let mut chain: Vec<String> = Vec::new();
         let mut guard = 0;
         while cur != 0 && guard < 64 {
             guard += 1;
             let Some(a) = self.proc(cur) else { break };
+            // O systemd --user é pai de tudo que veio de `uwsm app`/`systemd-run`: como origem
+            // não diz nada. A unidade do cgroup (abaixo) diz.
+            if a.name_lower == "systemd" || a.pid == 1 {
+                break;
+            }
             chain.push(format!("{} ({})", a.name, a.pid));
             if !categories::is_generic_host(&a.name_lower) {
-                let tip = if chain.len() > 1 {
+                let mut tip = if chain.len() > 1 {
                     format!("{}\nclique para selecionar", chain.iter().rev().cloned().collect::<Vec<_>>().join(" › "))
                 } else {
                     format!("PID {} — clique para selecionar o pai", a.pid)
                 };
-                return (a.name.clone(), Some(a.pid), tip, false);
+                // `devin (1896666)` dentro de `hermes-gateway.service`: o pai imediato é o
+                // devin, mas quem mandou foi o Hermes. Os dois aparecem.
+                let mut label = a.name.clone();
+                let redundant = |u: &str| {
+                    let (u, n) = (u.to_lowercase(), a.name_lower.trim_end_matches(": server").to_string());
+                    u.starts_with("desktop") || u.contains(&n) || n.contains(&u)
+                };
+                if let Some(u) = unit.as_deref().filter(|u| !redundant(u)) {
+                    label = format!("{label} · {u}");
+                }
+                if let Some(raw) = &l.unit {
+                    tip.push_str(&format!("\nunidade: {raw}"));
+                }
+                return (label, Some(a.pid), tip, false);
             }
             cur = a.ppid;
         }
-        // Cadeia só de hosts genéricos ou interrompida: usa o ambiente herdado.
-        let l = &p.launcher;
+        // Cadeia só de hosts genéricos ou interrompida: usa o ambiente herdado e o cgroup.
         if !l.short().is_empty() {
-            let mut tip = String::from("Deduzido das variáveis de ambiente herdadas");
+            let mut tip = if l.agent.is_some() || l.host.is_some() {
+                String::from("Deduzido das variáveis de ambiente herdadas")
+            } else {
+                String::from("Deduzido da unidade do systemd (cgroup) que contém o processo")
+            };
+            if let Some(raw) = &l.unit {
+                tip.push_str(&format!("\nunidade: {raw}"));
+            }
             if let Some(sid) = &l.session {
                 tip.push_str(&format!(" · sessão {sid}"));
             }
@@ -777,7 +820,19 @@ impl App {
                 }
                 SortKey::Cat => self.cat(*a).cmp(&self.cat(*b)).then(self.mem_of(pb).cmp(&self.mem_of(pa))),
                 SortKey::Pid => pa.pid.cmp(&pb.pid),
-                SortKey::Cpu => pa.cpu_pct.partial_cmp(&pb.cpu_pct).unwrap_or(std::cmp::Ordering::Equal),
+                SortKey::Cpu => {
+                    // Na Árvore compara a subárvore, como a RAM: o pai sobe junto com
+                    // os filhos que estão comendo núcleo.
+                    let (ca, cb) = if tree {
+                        (
+                            self.subtree_cpu.get(a).copied().unwrap_or(pa.cpu_pct),
+                            self.subtree_cpu.get(b).copied().unwrap_or(pb.cpu_pct),
+                        )
+                    } else {
+                        (pa.cpu_pct, pb.cpu_pct)
+                    };
+                    ca.partial_cmp(&cb).unwrap_or(std::cmp::Ordering::Equal)
+                }
                 SortKey::Gpu => pa.gpu_load.unwrap_or(-1.0).partial_cmp(&pb.gpu_load.unwrap_or(-1.0)).unwrap_or(std::cmp::Ordering::Equal),
                 SortKey::Vram => pa.gpu_vram.unwrap_or(0).cmp(&pb.gpu_vram.unwrap_or(0)),
                 SortKey::State => {
@@ -792,6 +847,10 @@ impl App {
                     let nb = self.proc(pb.ppid).map(|p| p.name_lower.as_str()).unwrap_or("");
                     na.cmp(nb).then(self.mem_of(pb).cmp(&self.mem_of(pa)))
                 }
+                SortKey::Steal => self
+                    .steal_rank(pa)
+                    .cmp(&self.steal_rank(pb))
+                    .then(pa.cpu_pct.partial_cmp(&pb.cpu_pct).unwrap_or(std::cmp::Ordering::Equal)),
             };
             // Desempate por PID depois da inversão. Sem ele, as dezenas de processos
             // empatados em "–" na coluna CPU trocavam de lugar a cada amostra e a lista
@@ -799,6 +858,108 @@ impl App {
             let ord = if desc { ord.reverse() } else { ord };
             ord.then(pa.pid.cmp(&pb.pid))
         });
+    }
+
+    fn proc_age_secs(p: &ProcInfo) -> u64 {
+        ((procs::now_filetime() - p.create_time).max(0) / 10_000_000) as u64
+    }
+
+    fn steal_of(&self, p: &ProcInfo) -> Option<StealKind> {
+        let leftover = identity::leftover_reason(&p.cmdline, p.kernel_state, p.has_window).is_some();
+        pressure::steal_kind(
+            leftover,
+            &p.cmdline,
+            p.cpu_pct,
+            self.mem_of(p),
+            self.ncpu as u32,
+            Self::proc_age_secs(p),
+        )
+    }
+
+    fn steal_rank(&self, p: &ProcInfo) -> u8 {
+        self.steal_of(p).map(StealKind::rank).unwrap_or(0)
+    }
+
+    fn group_steal_rank(&self, g: &AppGroup) -> u8 {
+        g.pids
+            .iter()
+            .filter_map(|pid| self.proc(*pid))
+            .map(|p| self.steal_rank(p))
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn pressure_snap(&self) -> pressure::Snapshot {
+        pressure::Snapshot {
+            load1: self.sys.load1,
+            ncpu: self.ncpu as u32,
+            swap_used: self.mem.swap_used,
+            swap_total: self.mem.swap_total,
+            gpu_pct: self.sys.gpu.as_ref().and_then(|g| g.util_pct),
+            game_open: self.procs.iter().any(|p| self.cat(p.pid) == Category::Games),
+        }
+    }
+
+    fn thieves(&self) -> Vec<pressure::Thief> {
+        let game = self.pressure_snap().game_open;
+        let mut out: Vec<pressure::Thief> = self
+            .procs
+            .iter()
+            .filter_map(|p| {
+                let kind = self.steal_of(p)?;
+                let cores = pressure::cores(p.cpu_pct, self.ncpu as u32);
+                if !pressure::notable(kind, cores, game) {
+                    return None;
+                }
+                Some(pressure::Thief {
+                    pid: p.pid,
+                    label: identity::of(p).label,
+                    kind,
+                    cores,
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.kind
+                .rank()
+                .cmp(&a.kind.rank())
+                .then(b.cores.partial_cmp(&a.cores).unwrap_or(std::cmp::Ordering::Equal))
+                .then(a.pid.cmp(&b.pid))
+        });
+        out.truncate(5);
+        out
+    }
+
+    fn cpu_cell(cpu_pct: f32, ncpu: usize) -> (String, Color32) {
+        // Sempre % da máquina: uma unidade só na coluna. "0.8×" acima de "0.9%" não
+        // ordenava aos olhos de ninguém. Os núcleos equivalentes ficam na cor e no hover —
+        // e na própria célula quando a Disputa está ligada (`cpu_cell_disputa`).
+        let cores = pressure::cores(cpu_pct, ncpu as u32);
+        if cores >= 0.8 {
+            (format!("{cpu_pct:.0}%"), Color32::from_rgb(255, 150, 90))
+        } else if cores >= 0.25 {
+            (format!("{cpu_pct:.1}%"), Color32::from_rgb(230, 210, 120))
+        } else if cpu_pct >= 0.05 {
+            (format!("{cpu_pct:.1}%"), Color32::from_rgb(200, 200, 200))
+        } else {
+            ("–".into(), Color32::from_gray(110))
+        }
+    }
+
+    /// Célula de CPU com a Disputa ligada: núcleos equivalentes em destaque ("14.2×"), o %
+    /// da máquina menor ao lado. É a unidade que faz um processo problemático saltar da lista.
+    fn cpu_cell_disputa(ui: &mut egui::Ui, cpu_pct: f32, ncpu: usize, muted_pct: Color32) {
+        let (pct_txt, c) = Self::cpu_cell(cpu_pct, ncpu);
+        let cores = pressure::cores(cpu_pct, ncpu as u32);
+        if cores < 0.05 {
+            ui.label(num("–").color(Color32::from_gray(110)));
+            return;
+        }
+        let cores_txt = if cores >= 10.0 { format!("{cores:.0}×") } else { format!("{cores:.1}×") };
+        // Layout da célula é direita→esquerda: o × fica encostado na borda, o % antes dele.
+        ui.label(num(cores_txt).color(c).strong());
+        ui.add_space(3.0);
+        ui.label(RichText::new(pct_txt).size(10.5).color(muted_pct));
     }
 
     /// Linhas de memória que não é de processo, para a soma da lista bater com o topo.
@@ -1001,6 +1162,10 @@ impl App {
                 // "Origem" é uma relação entre processos; no nível do app ela não
                 // significa nada, então cai no nome em vez de inventar uma ordem.
                 SortKey::Parent => ga.name_lower.cmp(&gb.name_lower),
+                SortKey::Steal => self
+                    .group_steal_rank(ga)
+                    .cmp(&self.group_steal_rank(gb))
+                    .then(ga.cpu.partial_cmp(&gb.cpu).unwrap_or(std::cmp::Ordering::Equal)),
             };
             let ord = if desc { ord.reverse() } else { ord };
             ord.then(ga.key.cmp(&gb.key))
@@ -1203,6 +1368,10 @@ impl App {
             self.toast(format!("{} está protegido (lock)", identity::of(&p).label), true);
             return;
         }
+        if p.kernel_state == Some('Z') {
+            self.request_reap_zombie(&p, tree);
+            return;
+        }
         pids.push((p.pid, p.create_time, identity::of(&p).label, self.mem_of(&p)));
         if tree {
             for d in self.descendants(pid) {
@@ -1216,6 +1385,53 @@ impl App {
             }
         }
         self.execute_kill(pids, skipped_locked);
+    }
+
+    /// Zombie: o kernel aceita SIGTERM/SIGKILL num processo `Z` (retorna 0) e nada acontece,
+    /// porque ele já morreu — o que falta é o pai chamar `wait`. Sem Shift, cutuca o pai com
+    /// SIGCHLD e confere; com Shift (ou se o pai já sumiu), finaliza o pai, que é quem segura.
+    fn request_reap_zombie(&mut self, p: &ProcInfo, kill_parent: bool) {
+        let label = identity::of(p).label;
+        let ppid = if p.ppid != 0 { p.ppid } else { p.raw_ppid };
+        let parent = self.proc(ppid).cloned();
+        let Some(parent) = parent.filter(|pp| pp.pid > 1) else {
+            self.toast(format!("{label} ({}) é zumbi e o pai já saiu: o init recolhe sozinho em instantes", p.pid), false);
+            self.after_kill();
+            return;
+        };
+        let pname = format!("{} ({})", identity::of(&parent).label, parent.pid);
+        if kill_parent {
+            if self.is_locked(&parent) {
+                self.toast(format!("{label} é zumbi; o pai {pname} está protegido (lock), não dá para finalizar"), true);
+                return;
+            }
+            let entry = (parent.pid, parent.create_time, identity::of(&parent).label, self.mem_of(&parent));
+            self.execute_kill(vec![entry], 0);
+            return;
+        }
+        match procs::nudge_parent(parent.pid) {
+            procs::KillOutcome::Signaled => {}
+            procs::KillOutcome::Denied => {
+                self.toast(format!("{label} é zumbi; sem permissão para sinalizar o pai {pname}"), true);
+                return;
+            }
+            _ => {
+                self.toast(format!("{label} é zumbi e o pai {pname} já saiu: o init recolhe em instantes"), false);
+                self.after_kill();
+                return;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let still = pid_still_same(p.pid, p.create_time) && procs::kernel_state(p.pid) == Some('Z');
+        self.after_kill();
+        if still {
+            self.toast(
+                format!("{label} ({}) é zumbi: já morreu, quem segura é {pname}. Shift+✖ finaliza o pai", p.pid),
+                true,
+            );
+        } else {
+            self.toast(format!("zumbi {label} ({}) recolhido por {pname}", p.pid), false);
+        }
     }
 
     /// Encerra todos os processos de um app agrupado.
@@ -1596,13 +1812,22 @@ impl App {
 
             let w = ((ui.available_width() - 6.0) / 2.0).max(80.0);
             let cpu_pct = self.sys.cpu_pct;
+            let cpu_sub = self
+                .sys
+                .load1
+                .map(|l| format!("load {}", pt_num(l as f64, 1)))
+                .unwrap_or_default();
             ui.horizontal(|ui| {
-                Self::meter_tile(ui, w, "CPU", cpu_pct, self.cpu_temp(), "", |ui, w| {
+                Self::meter_tile(ui, w, "CPU", cpu_pct, self.cpu_temp(), &cpu_sub, |ui, w| {
                     Self::meter_bar(ui, w, cpu_pct, "Uso de CPU");
                 });
                 let used = self.mem.used_phys();
                 let total = self.mem.total_phys.max(1);
-                let sub = format!("{} / {}", fmt_gb(used), fmt_gb(total));
+                let sub = if self.mem.swap_used >= GB {
+                    format!("{} / {} +swap", fmt_gb(used), fmt_gb(total))
+                } else {
+                    format!("{} / {}", fmt_gb(used), fmt_gb(total))
+                };
                 Self::meter_tile(ui, w, "RAM", Some(used as f32 / total as f32 * 100.0), self.ram_temp(), &sub, |ui, w| {
                     self.ram_gauge(ui, w)
                 });
@@ -2042,6 +2267,7 @@ impl App {
         // ocupa. Sem isso o filho fica desenhado à esquerda do nome do app e a hierarquia
         // aparece invertida.
         let group_gutter = self.cfg.view == ViewMode::List && self.cfg.group_apps;
+        let disputa_on = self.sort == SortKey::Steal;
         let mut click_select: Option<u32> = None;
         let mut toggle_expand: Option<u32> = None;
         let mut toggle_cat: Option<Category> = None;
@@ -2101,7 +2327,8 @@ impl App {
             .cell_layout(Layout::left_to_right(Align::Center))
             .column(Column::initial(300.0).at_least(180.0).clip(true))
             .column(Column::initial(96.0).at_least(72.0))
-            .column(Column::initial(60.0).at_least(48.0))
+            // Com a Disputa ligada a célula mostra "87% 14×", que não cabe em 60 px.
+            .column(if disputa_on { Column::initial(96.0).at_least(84.0) } else { Column::initial(60.0).at_least(48.0) })
             .column(Column::initial(56.0).at_least(44.0))
             .column(Column::initial(68.0).at_least(52.0))
             .column(Column::initial(72.0).at_least(56.0))
@@ -2133,12 +2360,16 @@ impl App {
                 header.col(|ui| {
                     self.header_btn_right(ui, SortKey::Ram, &ram_label);
                 });
-                header.col(|ui| self.header_btn_right(ui, SortKey::Cpu, "CPU"));
+                header.col(|ui| {
+                    // Sempre CPU: quando o cabeçalho virava "Disputa", clicar nele só
+                    // invertia a Disputa e a ordenação por CPU ficava inalcançável.
+                    self.header_btn_right(ui, SortKey::Cpu, if disputa_on { "CPU · ×" } else { "CPU" });
+                });
                 header
                     .col(|ui| { self.header_btn_right(ui, SortKey::Gpu, "GPU"); })
                     .1
                     .on_hover_text(if self.gpu_per_proc {
-                        "% de carga da GPU (engine mais ocupada). – = o driver não falou, não é zero.".to_string()
+                        "% de carga da GPU (engine mais ocupada, pico dos últimos segundos). – = processo sem contexto na GPU ou driver sem leitura.".to_string()
                     } else {
                         "Contador de GPU por processo indisponível neste host".to_string()
                     });
@@ -2248,8 +2479,15 @@ impl App {
                                 let tex = self.icons.get(&icon_key).and_then(|t| t.as_ref());
                                 avatar(ui, tex, cat, &name);
                                 ui.add_space(2.0);
+                                let steal = g
+                                    .pids
+                                    .iter()
+                                    .filter_map(|pid| self.proc(*pid).and_then(|p| self.steal_of(p)))
+                                    .max_by_key(|k| k.rank());
                                 let chip_info = if leftover.is_some() {
                                     Some(("sobra", Color32::from_rgb(230, 170, 90)))
+                                } else if let Some(kind) = steal {
+                                    Some((kind.chip(), Color32::from_rgb(255, 150, 90)))
                                 } else if focused {
                                     Some(("em foco", ACCENT_FG))
                                 } else {
@@ -2290,15 +2528,19 @@ impl App {
                                 });
                             });
                             row.col(|ui| {
-                                let c = if cpu >= 25.0 {
-                                    Color32::from_rgb(255, 150, 90)
-                                } else if cpu >= 5.0 {
-                                    Color32::from_rgb(230, 210, 120)
-                                } else {
-                                    ui_text_color(ui_dark())
-                                };
+                                let (txt, c) = Self::cpu_cell(cpu, self.ncpu);
+                                let tip = format!(
+                                    "{cpu:.1}% da máquina ({} núcleos) = {:.1} núcleos equivalentes.\n\n100% = a máquina inteira. Processo que come 1 núcleo aparece como {:.1}% — por isso some na lista por RAM.",
+                                    self.ncpu,
+                                    pressure::cores(cpu, self.ncpu as u32),
+                                    100.0 / self.ncpu.max(1) as f32
+                                );
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    ui.label(num(if cpu < 0.05 { "–".to_string() } else { format!("{cpu:.1}%") }).color(c).strong());
+                                    if disputa_on {
+                                        ui.scope(|ui| Self::cpu_cell_disputa(ui, cpu, self.ncpu, MUTED)).response.on_hover_text(tip);
+                                    } else {
+                                        ui.label(num(txt).color(c).strong()).on_hover_text(tip);
+                                    }
                                 });
                             });
                             row.col(|ui| {
@@ -2407,10 +2649,13 @@ impl App {
                                 avatar(ui, tex, cat, &task.label);
                                 ui.add_space(2.0);
                                 let leftover = identity::leftover_reason(&p.cmdline, p.kernel_state, p.has_window);
+                                let steal = self.steal_of(&p);
                                 let chip_info = if p.kernel_state == Some('Z') {
                                     Some(("zombie", Color32::from_rgb(230, 120, 120)))
                                 } else if leftover.is_some() {
                                     Some(("sobra", Color32::from_rgb(230, 170, 90)))
+                                } else if let Some(kind) = steal.filter(|k| *k != StealKind::Leftover) {
+                                    Some((kind.chip(), Color32::from_rgb(255, 150, 90)))
                                 } else if p.focused {
                                     Some(("em foco", ACCENT_FG))
                                 } else if critical {
@@ -2512,24 +2757,44 @@ impl App {
                                     }
                                 });
                             });
-                            // CPU
+                            // CPU — na Árvore soma a subárvore, como a coluna RAM: o pai
+                            // mostra o que o app inteiro come, não só o processo raiz.
                             row.col(|ui| {
-                                let c = if p.cpu_pct >= 25.0 {
-                                    Color32::from_rgb(255, 150, 90)
-                                } else if p.cpu_pct >= 5.0 {
-                                    Color32::from_rgb(230, 210, 120)
+                                let cpu_shown = if tree {
+                                    self.subtree_cpu.get(&pid).copied().unwrap_or(p.cpu_pct)
                                 } else {
-                                    text_color
+                                    p.cpu_pct
                                 };
+                                let (txt, c) = Self::cpu_cell(cpu_shown, self.ncpu);
+                                let c = if c == Color32::from_rgb(200, 200, 200) { text_color } else { c };
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    let r = ui.label(num(if p.cpu_pct < 0.05 { "–".to_string() } else { format!("{:.1}%", p.cpu_pct) }).color(c));
-                                    // A coluna mostra a média — quem está caçando um pico
-                                    // precisa do valor cru do último intervalo também.
-                                    if p.cpu_pct >= 0.05 || p.cpu_raw_pct >= 0.05 {
-                                        r.on_hover_text(format!(
-                                            "média: {:.1}%\núltimo intervalo: {:.1}%\n\n100% = a máquina inteira ({} núcleos).",
-                                            p.cpu_pct, p.cpu_raw_pct, self.ncpu
+                                    let r = if disputa_on {
+                                        ui.scope(|ui| Self::cpu_cell_disputa(ui, cpu_shown, self.ncpu, MUTED)).response
+                                    } else {
+                                        ui.label(num(txt).color(c))
+                                    };
+                                    if cpu_shown >= 0.05 || p.cpu_raw_pct >= 0.05 {
+                                        let mut tip = if tree && has_children {
+                                            format!(
+                                                "deste processo: {:.1}%\ncom os filhos: {:.1}% = {:.1} núcleos\n",
+                                                p.cpu_pct,
+                                                cpu_shown,
+                                                pressure::cores(cpu_shown, self.ncpu as u32)
+                                            )
+                                        } else {
+                                            format!(
+                                                "média: {:.1}% da máquina = {:.1} núcleos\núltimo intervalo: {:.1}%\n",
+                                                p.cpu_pct,
+                                                pressure::cores(p.cpu_pct, self.ncpu as u32),
+                                                p.cpu_raw_pct
+                                            )
+                                        };
+                                        tip.push_str(&format!(
+                                            "\n100% = a máquina inteira ({} núcleos). 1 núcleo cheio vira {:.1}%.",
+                                            self.ncpu,
+                                            100.0 / self.ncpu.max(1) as f32
                                         ));
+                                        r.on_hover_text(tip);
                                     }
                                 });
                             });
@@ -2651,7 +2916,11 @@ impl App {
                                             .stroke(Stroke::NONE)
                                             .corner_radius(8.0)
                                             .min_size(btn_size);
-                                        let r = ui.add(kb).on_hover_text("Finalizar processo (Shift: árvore inteira)");
+                                        let r = ui.add(kb).on_hover_text(if p.kernel_state == Some('Z') {
+                                            "Zumbi: já morreu, sinal nele não faz nada. Clique pede ao pai para recolher; Shift+clique finaliza o pai"
+                                        } else {
+                                            "Finalizar processo (Shift: árvore inteira)"
+                                        });
                                         if r.clicked() {
                                             let shift = ui.input(|i| i.modifiers.shift);
                                             kill = Some((pid, shift));
@@ -2708,7 +2977,7 @@ impl App {
                                     ui.close_menu();
                                 }
                                 ui.menu_button("Ordenar por", |ui| {
-                                    for (k, l) in [(SortKey::Pid, "PID"), (SortKey::State, "Estado"), (SortKey::Parent, "Origem"), (SortKey::Cat, "Categoria")] {
+                                    for (k, l) in [(SortKey::Steal, "Disputa"), (SortKey::Pid, "PID"), (SortKey::State, "Estado"), (SortKey::Parent, "Origem"), (SortKey::Cat, "Categoria")] {
                                         if ui.selectable_label(self.sort == k, l).clicked() {
                                             sort_by = Some(k);
                                             ui.close_menu();
@@ -3644,6 +3913,7 @@ impl eframe::App for App {
                 } else {
                     self.ui_cards(ui);
                     ui.add_space(8.0);
+                    self.ui_pressure_banner(ui);
                     self.ui_chips(ui);
                     ui.add_space(6.0);
                     egui::Frame::new()
@@ -4039,19 +4309,45 @@ impl App {
             let cpu_pct = self.sys.cpu_pct;
             let cpu_temp = self.cpu_temp();
             let ncpu = self.ncpu;
-            Self::resource_card(ui, w, "CPU", cpu_pct, C_CPU, &self.hist_cpu, "Uso de CPU (todos os núcleos)", |ui| {
+            let press = self.pressure_snap();
+            let cpu_color = if press.load_hot() { Color32::from_rgb(255, 150, 90) } else { C_CPU };
+            let cpu_sub = match self.sys.load1 {
+                Some(l) => format!("load {} · {ncpu} threads", pt_num(l as f64, 2)),
+                None => format!("{ncpu} threads"),
+            };
+            let cpu_tip = match (self.sys.load1, self.sys.load5, self.sys.load15) {
+                (Some(a), Some(b), Some(c)) => format!(
+                    "Uso de CPU (todos os núcleos).\nLoad 1/5/15 min: {a:.2} / {b:.2} / {c:.2}\nLoad acima de {ncpu} significa fila cheia — processo com pouca RAM some na lista ordenada por memória."
+                ),
+                _ => "Uso de CPU (todos os núcleos)".into(),
+            };
+            Self::resource_card(ui, w, "CPU", cpu_pct, cpu_color, &self.hist_cpu, &cpu_tip, |ui| {
                 Self::temp_label(ui, cpu_temp);
-                ui.label(RichText::new(format!("{ncpu} threads")).color(MUTED).size(11.5));
+                ui.label(RichText::new(cpu_sub).color(if press.load_hot() { Color32::from_rgb(255, 171, 145) } else { MUTED }).size(11.5));
             });
 
             let used = self.mem.used_phys();
             let total = self.mem.total_phys.max(1);
             let ram_pct = Some(used as f32 / total as f32 * 100.0);
             let ram_temp = self.ram_temp();
-            let ram_sub = format!("{} / {}", fmt_gb(used), fmt_gb(total));
-            Self::resource_card(ui, w, "Memória", ram_pct, C_RAM, &self.hist_ram, "RAM física em uso", |ui| {
+            let ram_sub = if self.mem.swap_total > 0 {
+                format!("{} / {} · swap {}", fmt_gb(used), fmt_gb(total), fmt_gb(self.mem.swap_used))
+            } else {
+                format!("{} / {}", fmt_gb(used), fmt_gb(total))
+            };
+            let ram_color = if press.swap_hot() { Color32::from_rgb(255, 150, 90) } else { C_RAM };
+            let ram_tip = if self.mem.swap_total > 0 {
+                format!(
+                    "RAM física em uso.\nSwap: {} / {}.",
+                    fmt_gb(self.mem.swap_used),
+                    fmt_gb(self.mem.swap_total)
+                )
+            } else {
+                "RAM física em uso".into()
+            };
+            Self::resource_card(ui, w, "Memória", ram_pct, ram_color, &self.hist_ram, &ram_tip, |ui| {
                 Self::temp_label(ui, ram_temp);
-                ui.label(RichText::new(ram_sub).color(MUTED).size(11.5));
+                ui.label(RichText::new(ram_sub).color(if press.swap_hot() { Color32::from_rgb(255, 171, 145) } else { MUTED }).size(11.5));
             });
 
             let gpu = self.sys.gpu.clone();
@@ -4172,6 +4468,49 @@ impl App {
         r.response.on_hover_text(tip);
     }
 
+    fn ui_pressure_banner(&mut self, ui: &mut egui::Ui) {
+        let snap = self.pressure_snap();
+        let thieves = self.thieves();
+        let Some(text) = pressure::banner(&snap, &thieves) else {
+            return;
+        };
+        let go = ui
+            .scope(|ui| {
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(74, 28, 11))
+                    .corner_radius(8.0)
+                    .inner_margin(egui::Margin::symmetric(12, 8))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 10.0;
+                            ui.add(egui::Label::new(RichText::new(text).size(12.5).color(Color32::from_rgb(255, 171, 145))).wrap());
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                let btn = egui::Button::new(RichText::new("Ver disputa").size(12.5).color(Color32::from_rgb(255, 171, 145)))
+                                    .fill(Color32::from_rgb(90, 36, 16))
+                                    .stroke(Stroke::NONE)
+                                    .corner_radius(8.0);
+                                ui.add(btn).clicked()
+                            })
+                            .inner
+                        })
+                        .inner
+                    })
+                    .inner
+            })
+            .inner;
+        if go {
+            self.sort = SortKey::Steal;
+            self.sort_desc = true;
+            self.rows_dirty = true;
+            self.order_frozen = false;
+            if let Some(first) = thieves.first() {
+                self.selected = Some(first.pid);
+                self.scroll_to_selected = true;
+            }
+        }
+        ui.add_space(8.0);
+    }
+
     /// Chips de categoria: filtram a tabela. Duplo clique isola uma.
     fn ui_chips(&mut self, ui: &mut egui::Ui) {
         let totals = self.cat_totals();
@@ -4205,6 +4544,30 @@ impl App {
                 if !self.cat_enabled.remove(&c) {
                     self.cat_enabled.insert(c);
                 }
+            }
+            let disputa_on = self.sort == SortKey::Steal;
+            let disputa = egui::Button::new(
+                RichText::new("● Disputa")
+                    .color(if disputa_on { Color32::from_rgb(255, 150, 90) } else { MUTED })
+                    .size(12.0),
+            )
+            .fill(if disputa_on { Color32::from_rgb(255, 150, 90).gamma_multiply(0.14) } else { SURFACE })
+            .stroke(Stroke::NONE)
+            .corner_radius(999.0);
+            if ui
+                .add(disputa)
+                .on_hover_text("Ordena por quem come núcleo sem aparecer na RAM: sobra, loop de credencial, CPU barata. É o recorte que o jogo sente e a lista por memória esconde.")
+                .clicked()
+            {
+                if disputa_on {
+                    self.sort = SortKey::Ram;
+                    self.sort_desc = true;
+                } else {
+                    self.sort = SortKey::Steal;
+                    self.sort_desc = true;
+                }
+                self.rows_dirty = true;
+                self.order_frozen = false;
             }
             // Chip das linhas que não são processo: interruptor de exibição, não filtro. A
             // memória do kernel continua no medidor e na conferência do rodapé.
@@ -4302,6 +4665,29 @@ impl App {
                     self.cfg_dirty = true;
                     self.rows_dirty = true;
                 }
+                // Cortes prontos: o caso de uso real é "cadê quem está comendo agora",
+                // não calibrar quatro DragValues no susto.
+                ui.horizontal_wrapped(|ui| {
+                    let cortes_ativos = self.cfg.min_cpu > 0.0 || self.cfg.min_gpu > 0.0 || self.cfg.min_mb > 0 || self.cfg.min_vram_mb > 0;
+                    if ui.small_button("Só CPU ativa (≥ 3%)").on_hover_text("Esconde quem não está usando CPU agora (corte em 3% da máquina)").clicked() {
+                        self.cfg.min_cpu = 3.0;
+                        self.cfg_dirty = true;
+                        self.rows_dirty = true;
+                    }
+                    if ui.small_button("Só GPU em uso (≥ 1%)").on_hover_text("Esconde quem não está com carga na GPU").clicked() {
+                        self.cfg.min_gpu = 1.0;
+                        self.cfg_dirty = true;
+                        self.rows_dirty = true;
+                    }
+                    if ui.add_enabled(cortes_ativos, egui::Button::new("Mostrar tudo").small()).on_hover_text("Zera os quatro cortes").clicked() {
+                        self.cfg.min_mb = 0;
+                        self.cfg.min_cpu = 0.0;
+                        self.cfg.min_gpu = 0.0;
+                        self.cfg.min_vram_mb = 0;
+                        self.cfg_dirty = true;
+                        self.rows_dirty = true;
+                    }
+                });
                 ui.separator();
                 ui.label(RichText::new("Amostragem").strong());
                 ui.horizontal(|ui| self.ui_sampling_controls(ui));

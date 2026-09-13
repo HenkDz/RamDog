@@ -18,7 +18,10 @@ const CPU_EMA_TAU: f64 = 1.0;
 #[cfg(target_os = "linux")]
 const SMAPS_INTERVAL: Duration = Duration::from_secs(5);
 #[cfg(target_os = "linux")]
-const SMAPS_PER_SAMPLE: usize = 24;
+// 96 × ~0,2 ms na thread de amostragem: varre os ~700 processos de um desktop
+// carregado em poucos ticks. Com 24, a coluna PSS/Privado só tinha leitura
+// fresca pra 24 linhas e o resto mostrava zero.
+const SMAPS_PER_SAMPLE: usize = 96;
 #[cfg(target_os = "linux")]
 const FD_INTERVAL: Duration = Duration::from_secs(5);
 #[cfg(target_os = "linux")]
@@ -77,13 +80,12 @@ fn refresh_cached_reads<T>(
 }
 
 #[cfg(target_os = "linux")]
-fn cached_value<T: Copy>(
-    cache: &HashMap<ProcessKey, CachedRead<T>>,
-    key: &ProcessKey,
-    now: Instant,
-    interval: Duration,
-) -> Option<T> {
-    cache.get(key).filter(|c| now.duration_since(c.at) < interval).and_then(|c| c.value)
+fn cached_value<T: Copy>(cache: &HashMap<ProcessKey, CachedRead<T>>, key: &ProcessKey) -> Option<T> {
+    // Sem prazo de validade: a última leitura boa vale até a próxima tentativa.
+    // Expirar em `interval` fazia PSS/Privado piscar pra zero em todo processo
+    // fora da janela de releitura — dado atrasado uns segundos é melhor que dado
+    // zerado. Leitura que falhou limpa o valor, e processo morto sai no retain.
+    cache.get(key).and_then(|c| c.value)
 }
 
 pub struct Sampler {
@@ -212,6 +214,7 @@ impl Sampler {
                 let exe = read_exe(p.pid);
                 let lines = read_environ(p.pid);
                 let mut launcher = launcher_from_env_lines(&lines);
+                launcher.unit = read_unit(p.pid);
                 if launcher.steam_app_id.is_none() {
                     for hay in [cmdline.as_str(), exe.as_str()] {
                         if let Some(id) = hay
@@ -267,7 +270,7 @@ impl Sampler {
                     at: now,
                 },
             );
-            let linux_memory = cached_value(&self.smaps, &key, now, SMAPS_INTERVAL);
+            let linux_memory = cached_value(&self.smaps, &key);
             let private_ws = linux_memory
                 .map(|m| m.0)
                 .unwrap_or_else(|| p.rss.saturating_sub(p.shared));
@@ -293,7 +296,7 @@ impl Sampler {
                 working_set: p.rss,
                 commit: p.virt,
                 threads: p.stat.num_threads,
-                handles: cached_value(&self.fds, &key, now, FD_INTERVAL),
+                handles: cached_value(&self.fds, &key),
                 session: p.stat.session,
                 create_time,
                 cpu_pct,
@@ -445,6 +448,8 @@ pub fn mem_status() -> MemStatus {
         let text = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
         let total = kb_field(&text, "MemTotal:").unwrap_or(0);
         let avail = kb_field(&text, "MemAvailable:").unwrap_or(0);
+        let swap_total = kb_field(&text, "SwapTotal:").unwrap_or(0);
+        let swap_free = kb_field(&text, "SwapFree:").unwrap_or(0);
         let linux_commit = match (
             kb_field(&text, "Committed_AS:"),
             kb_field(&text, "CommitLimit:"),
@@ -458,6 +463,8 @@ pub fn mem_status() -> MemStatus {
             avail_phys: avail,
             total_commit: linux_commit.map(|m| m.1).unwrap_or(0),
             avail_commit: linux_commit.map(|m| m.1.saturating_sub(m.0)).unwrap_or(0),
+            swap_used: swap_total.saturating_sub(swap_free),
+            swap_total,
         };
     }
     #[cfg(not(target_os = "linux"))]
@@ -469,6 +476,8 @@ pub fn mem_status() -> MemStatus {
             avail_phys: sys.available_memory(),
             total_commit: sys.total_memory().saturating_add(sys.total_swap()),
             avail_commit: sys.available_memory().saturating_add(sys.free_swap()),
+            swap_used: sys.total_swap().saturating_sub(sys.free_swap()),
+            swap_total: sys.total_swap(),
         }
     }
 }
@@ -479,6 +488,27 @@ pub fn kill(pid: u32) -> KillOutcome {
 
 pub fn terminate(pid: u32) -> KillOutcome {
     signal_pid(pid, libc::SIGTERM)
+}
+
+/// Zombie não morre com sinal: já morreu. O que resolve é o pai chamar `wait`, e o
+/// SIGCHLD é o toque que a maioria dos pais bem escritos atende.
+pub fn nudge_parent(ppid: u32) -> KillOutcome {
+    signal_pid(ppid, libc::SIGCHLD)
+}
+
+/// Estado do kernel agora (`Z` = zombie), sem esperar a próxima amostra.
+pub fn kernel_state(pid: u32) -> Option<char> {
+    #[cfg(target_os = "linux")]
+    {
+        let text = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let rest = &text[text.rfind(')')? + 1..];
+        rest.split_whitespace().next()?.chars().next()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        None
+    }
 }
 
 fn signal_pid(pid: u32, sig: i32) -> KillOutcome {
@@ -635,6 +665,24 @@ fn read_environ(pid: u32) -> Vec<String> {
         .collect()
 }
 
+/// Folha do cgroup v2 (`0::/user.slice/.../hermes-gateway.service` → `hermes-gateway.service`).
+/// Lida uma vez por (pid, starttime), junto do environ: o processo não muda de unidade.
+#[cfg(target_os = "linux")]
+fn read_unit(pid: u32) -> Option<String> {
+    let text = std::fs::read_to_string(format!("/proc/{pid}/cgroup")).ok()?;
+    parse_unit(&text)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn parse_unit(cgroup: &str) -> Option<String> {
+    let path = cgroup
+        .lines()
+        .find_map(|l| l.strip_prefix("0::"))
+        .or_else(|| cgroup.lines().next()?.rsplit(':').next())?;
+    let leaf = path.trim().trim_end_matches('/').rsplit('/').next()?;
+    (leaf.ends_with(".service") || leaf.ends_with(".scope")).then(|| leaf.to_string())
+}
+
 #[cfg(target_os = "linux")]
 fn read_io_bytes(pid: u32) -> Option<u64> {
     let text = std::fs::read_to_string(format!("/proc/{pid}/io")).ok()?;
@@ -698,6 +746,21 @@ fn parse_smaps_rollup(text: &str) -> Option<(u64, u64)> {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cgroup_leaf_is_the_systemd_unit() {
+        assert_eq!(
+            parse_unit("0::/user.slice/user-1000.slice/user@1000.service/app.slice/hermes-gateway.service\n").as_deref(),
+            Some("hermes-gateway.service")
+        );
+        assert_eq!(
+            parse_unit("0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-agent\\x2dbench.slice/agent-bench@dailywork-campanhas.service").as_deref(),
+            Some("agent-bench@dailywork-campanhas.service")
+        );
+        assert_eq!(parse_unit("0::/\n"), None);
+        assert_eq!(parse_unit("0::/user.slice/user-1000.slice/user@1000.service/app.slice\n"), None);
+    }
 
     #[test]
     fn private_and_proportional_memory_are_not_rss() {
@@ -862,8 +925,8 @@ mod tests {
                 refresh_cached_reads(&mut cache, &candidates, now, interval, limit, 0,
                     |pid| (pid == target.0).then_some(3));
             }
-            assert_eq!(cached_value(&cache, &target, now, interval), Some(3));
-            assert_eq!(cached_value(&cache, &(1, 1), now, interval), None);
+            assert_eq!(cached_value(&cache, &target), Some(3));
+            assert_eq!(cached_value(&cache, &(1, 1)), None);
         }
     }
 
@@ -887,15 +950,17 @@ mod tests {
         let candidates = [(key, 1)];
         let mut cache = HashMap::new();
         refresh_cached_reads(&mut cache, &candidates, now, FD_INTERVAL, 1, 1, |_| Some(3));
-        assert_eq!(cached_value(&cache, &key, now, FD_INTERVAL), Some(3));
+        assert_eq!(cached_value(&cache, &key), Some(3));
         let expired = now + FD_INTERVAL;
-        assert_eq!(cached_value(&cache, &key, expired, FD_INTERVAL), None);
+        // Passado o intervalo o valor antigo continua valendo (não pisca pra None)…
+        assert_eq!(cached_value(&cache, &key), Some(3));
         let mut retries = 0;
         for _ in 0..2 {
             refresh_cached_reads(&mut cache, &candidates, expired, FD_INTERVAL, 1, 1,
                 |_| { retries += 1; None });
         }
-        assert_eq!(cached_value(&cache, &key, expired, FD_INTERVAL), None);
+        // …até uma releitura falhar de verdade: aí limpa, em vez de mentir dado velho.
+        assert_eq!(cached_value(&cache, &key), None);
         assert_eq!(retries, 1);
     }
 

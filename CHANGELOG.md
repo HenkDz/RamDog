@@ -2,6 +2,21 @@
 
 As mudanças são registradas por versão. As notas descrevem funcionalidades disponíveis e suas limitações; testes de hardware não equivalem a cobertura de todos os drivers e desktops.
 
+## [Unreleased]
+
+### Adicionado
+
+- Linux/macOS: load 1/5/15 min no card de CPU e swap usado no card de Memória. Load acima do número de núcleos e swap ≥ 1 GB acendem o card.
+- Faixa **Disputa** quando um jogo está aberto com GPU ociosa, load/swap altos, emulador Android sem janela, `git-credential`/`gh` em loop ou processo que come núcleo com pouca RAM. O botão **Ver disputa** ordena por isso e seleciona o primeiro.
+- Chip **Disputa** na fileira de categorias e item no menu de contexto. Com a Disputa ligada a coluna CPU mostra os núcleos equivalentes em destaque (`14×`) e o % da máquina menor ao lado; desligada, volta ao % só.
+- Linux: origem lida também da unidade do systemd (cgroup). Processo que veio de `uwsm app`, `systemd-run` ou de um serviço chega sem variáveis de ambiente e com o `systemd --user` como pai; agora aparece `Hermes (gateway)`, `agent-bench · projeto`, `Claude Desktop`, `desktop (navegador)` em vez de `systemd`. O nome cru da unidade fica no hover.
+
+### Corrigido
+
+- Zumbi não "finalizava": o kernel aceita SIGTERM/SIGKILL num processo `Z` e o RamDog contava como `1 finalizado(s), ~0,0 MB` sem nada mudar. Agora o ✖ num zumbi pede ao pai para recolher (SIGCHLD) e diz quem segura; Shift+✖ finaliza o pai.
+- Linux: o cliente Steam relançado por um atalho (`steam steam://rungameid/2357570`) era rotulado como o jogo (`Overwatch 2 · Steam / Proton`) horas depois de o jogo fechar. Agora é `Steam`.
+- Linux: ícone do binário escolhido pelo primeiro `.desktop` que o `read_dir` devolvesse. `Counter-Strike 2.desktop` (`Exec=steam steam://rungameid/730`) dava o ícone do CS ao cliente Steam. O `.desktop` com o nome do programa ganha; atalho com URL perde.
+
 ## [0.10.0] - 2026-09-11
 
 Interface nova, addon Limpeza, identidade da tarefa, GPU/VRAM na lista e encerramento que não mente. Inclui tudo da 0.9.1, que não chegou a ser publicada.

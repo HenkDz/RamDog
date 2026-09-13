@@ -123,6 +123,11 @@ const GENERIC_HOSTS: &[&str] = &[
     "node", "nodejs", "python", "python3", "pythonw", "py", "uv", "uvx", "npm", "npx", "pnpm", "yarn",
     "bun", "deno", "conhost", "cmd", "powershell", "pwsh", "bash", "sh", "dash", "zsh", "fish", "login",
     "sudo", "su", "env", "systemd-run", "wsl", "wslhost",
+    // Embrulhos que só passam o comando adiante: como origem, não dizem quem lançou.
+    // No Linux o nome vem do `comm`, cortado em 15 caracteres: "dbus-run-sessio".
+    "dbus-run-session", "dbus-run-sessio", "uwsm", "uwsm-app", "gtk-launch", "xdg-terminal-exec",
+    "xdg-terminal-ex", "bwrap", "srt-bwrap", "pv-adverb", "pressure-vessel-wrap", "pressure-vessel",
+    "reaper", "timeout", "nice", "ionice", "setsid", "nohup", "xargs", "flatpak", "flatpak-bwrap",
     "msedgewebview2", "java", "javaw", "ruby", "perl", "php", "electron", "webview2", "dotnet",
     "cscript", "wscript", "mshta", "rundll32", "esbuild", "tsserver", "typescript", "cargo", "rustc",
     "link", "cl", "gcc", "g++", "clang", "clang++", "make", "cmake", "ninja", "git", "ssh", "sshd",

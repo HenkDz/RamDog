@@ -28,6 +28,10 @@ pub struct SysSample {
     pub disk_bps: Option<f64>,
     pub gpu: Option<GpuInfo>,
     pub gpu_by_pid: HashMap<u32, f32>,
+    /// Load médio de 1/5/15 min. `None` no Windows (não existe o conceito).
+    pub load1: Option<f32>,
+    pub load5: Option<f32>,
+    pub load15: Option<f32>,
 }
 
 #[cfg(windows)]

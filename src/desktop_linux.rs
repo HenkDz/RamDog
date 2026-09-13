@@ -89,7 +89,11 @@ fn data_dirs() -> Vec<PathBuf> {
 fn icon_index() -> &'static HashMap<String, String> {
     static INDEX: OnceLock<HashMap<String, String>> = OnceLock::new();
     INDEX.get_or_init(|| {
-        let mut index = HashMap::new();
+        // Vários .desktop chamam o mesmo binário: `steam.desktop` e os atalhos de jogo
+        // (`Counter-Strike 2.desktop` = `steam steam://rungameid/730`, Icon=steam_icon_730).
+        // A ordem do read_dir é arbitrária, e o cliente Steam saía com o ícone do CS. O
+        // arquivo com o nome do programa ganha; atalho com URL de jogo perde de todos.
+        let mut index: HashMap<String, (u8, String)> = HashMap::new();
         for dir in data_dirs() {
             let Ok(entries) = std::fs::read_dir(dir.join("applications")) else {
                 continue;
@@ -116,10 +120,21 @@ fn icon_index() -> &'static HashMap<String, String> {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .into_owned();
-                index.entry(name).or_insert_with(|| icon.clone());
+                let stem = e.path().file_stem().unwrap_or_default().to_string_lossy().to_lowercase();
+                let rank = if stem == name.to_lowercase() {
+                    3
+                } else if words.iter().any(|w| w.contains("://")) {
+                    1
+                } else {
+                    2
+                };
+                let slot = index.entry(name).or_insert((0, String::new()));
+                if rank > slot.0 {
+                    *slot = (rank, icon.clone());
+                }
             }
         }
-        index
+        index.into_iter().map(|(k, (_, icon))| (k, icon)).collect()
     })
 }
 pub fn icon(path: &str) -> Option<crate::icons::RgbaIcon> {

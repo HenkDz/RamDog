@@ -109,11 +109,15 @@ pub struct Launcher {
     pub steam_app_id: Option<u32>,
     /// WINEPREFIX / STEAM_COMPAT_DATA_PATH.
     pub wine_prefix: Option<String>,
+    /// Unidade do systemd que contém o processo (folha do cgroup v2): `hermes-gateway.service`,
+    /// `agent-bench@dailywork.service`, `app-org.chromium.Chromium-123.scope`. Sobrevive a
+    /// `uwsm app`/`systemd-run`, que limpam o ambiente e reparentam para o systemd --user.
+    pub unit: Option<String>,
 }
 
 impl Launcher {
     pub fn is_empty(&self) -> bool {
-        self.agent.is_none() && self.host.is_none() && self.init_cwd.is_none()
+        self.agent.is_none() && self.host.is_none() && self.init_cwd.is_none() && self.unit_label().is_none()
     }
     /// Rótulo curto: "Claude Code · Maestri", "Maestri", "VS Code"...
     pub fn short(&self) -> String {
@@ -121,9 +125,53 @@ impl Launcher {
             (Some(a), Some(h)) => format!("{a} · {h}"),
             (Some(a), None) => a.clone(),
             (None, Some(h)) => h.clone(),
-            (None, None) => String::new(),
+            (None, None) => self.unit_label().unwrap_or_default(),
         }
     }
+    /// Nome humano da unidade do systemd, ou None quando ela não diz quem lançou.
+    pub fn unit_label(&self) -> Option<String> {
+        unit_label(self.unit.as_deref()?)
+    }
+}
+
+/// Traduz a folha do cgroup para quem lançou. `None` = unidade genérica demais para valer
+/// como origem (sessão de login, `init.scope`, raiz).
+pub(crate) fn unit_label(unit: &str) -> Option<String> {
+    let unit = unit.replace("\\x2d", "-");
+    let (stem, kind) = unit.rsplit_once('.')?;
+    if !matches!(kind, "service" | "scope") {
+        return None;
+    }
+    // `app-Hyprland-gtk-launch-d25303f7.scope` → lançado pelo menu/atalho do desktop.
+    // `app-org.chromium.Chromium-1962181.scope` → `uwsm app`/xdg: o usuário abriu.
+    if let Some(rest) = stem.strip_prefix("app-") {
+        let rest = rest.strip_prefix("graphical-").unwrap_or(rest);
+        let rest = rest.strip_prefix("Hyprland-").unwrap_or(rest);
+        let body = rest.rsplit_once('-').map(|(b, id)| if id.chars().all(|c| c.is_ascii_hexdigit()) { b } else { rest }).unwrap_or(rest);
+        return Some(match body {
+            "gtk-launch" | "xdg-terminal-exec" | "dmenu" | "walker" | "omarchy-launch" => "desktop".to_string(),
+            b if b.starts_with("org.chromium.") || b == "chromium" || b == "google-chrome" => "desktop (navegador)".to_string(),
+            "com.anthropic.Claude" => "Claude Desktop".to_string(),
+            b => format!("desktop · {b}"),
+        });
+    }
+    if stem.starts_with("tmux-spawn-") {
+        return Some("tmux".into());
+    }
+    if stem.starts_with("session-") || stem == "init" || stem.starts_with("user@") || stem.starts_with("wayland-wm@") {
+        return None;
+    }
+    // `agent-bench@dailywork-campanhas` → "agent-bench · dailywork-campanhas".
+    let (name, inst) = stem.split_once('@').map(|(n, i)| (n, Some(i))).unwrap_or((stem, None));
+    let pretty = match name {
+        "hermes-gateway" => "Hermes (gateway)".to_string(),
+        "9router" => "9Router".to_string(),
+        n => n.to_string(),
+    };
+    Some(match inst.filter(|i| !i.is_empty()) {
+        Some(i) => format!("{pretty} · {i}"),
+        None => pretty,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -230,6 +278,8 @@ pub struct MemStatus {
     pub linux_commit: Option<(u64, u64)>, // Committed_AS, CommitLimit
     pub total_commit: u64,
     pub avail_commit: u64,
+    pub swap_used: u64,
+    pub swap_total: u64,
 }
 
 impl MemStatus {
@@ -300,6 +350,8 @@ pub fn mem_status() -> MemStatus {
         avail_phys: m.ullAvailPhys,
         total_commit: m.ullTotalPageFile,
         avail_commit: m.ullAvailPageFile,
+        swap_used: 0,
+        swap_total: 0,
     }
 }
 
@@ -901,11 +953,22 @@ pub fn enable_debug_privilege() {
 #[path = "procs_unix.rs"]
 mod procs_unix;
 #[cfg(not(windows))]
-pub use procs_unix::{enable_debug_privilege, is_admin, kill, mem_status, terminate, Sampler};
+pub use procs_unix::{enable_debug_privilege, is_admin, kernel_state, kill, mem_status, nudge_parent, terminate, Sampler};
 
 #[cfg(windows)]
 pub fn terminate(pid: u32) -> KillOutcome {
     kill(pid)
+}
+
+/// Windows não tem zombie: o estado do kernel não é amostrado.
+#[cfg(windows)]
+pub fn kernel_state(_pid: u32) -> Option<char> {
+    None
+}
+
+#[cfg(windows)]
+pub fn nudge_parent(_ppid: u32) -> KillOutcome {
+    KillOutcome::Invalid
 }
 
 /// FILETIME atual (100 ns desde 1601-01-01 UTC).
@@ -914,4 +977,36 @@ pub fn now_filetime() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     (d.as_nanos() / 100) as i64 + 116_444_736_000_000_000
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::unit_label;
+
+    #[test]
+    fn service_units_name_the_launcher() {
+        assert_eq!(unit_label("hermes-gateway.service").as_deref(), Some("Hermes (gateway)"));
+        assert_eq!(unit_label("agent-bench@dailywork-campanhas.service").as_deref(), Some("agent-bench · dailywork-campanhas"));
+        assert_eq!(unit_label("9router.service").as_deref(), Some("9Router"));
+        assert_eq!(unit_label("no-mistakes-daemon-335d9d88.service").as_deref(), Some("no-mistakes-daemon-335d9d88"));
+    }
+
+    #[test]
+    fn desktop_scopes_collapse_to_desktop() {
+        assert_eq!(unit_label("app-Hyprland-gtk\\x2dlaunch-d25303f7.scope").as_deref(), Some("desktop"));
+        assert_eq!(unit_label("app-Hyprland-xdg\\x2dterminal\\x2dexec-b5376856.scope").as_deref(), Some("desktop"));
+        assert_eq!(unit_label("app-org.chromium.Chromium-1962181.scope").as_deref(), Some("desktop (navegador)"));
+        assert_eq!(unit_label("app-com.anthropic.Claude-155069.scope").as_deref(), Some("Claude Desktop"));
+        assert_eq!(unit_label("app-discord-3217129.scope").as_deref(), Some("desktop · discord"));
+        assert_eq!(unit_label("tmux-spawn-56e310aa-05c6.scope").as_deref(), Some("tmux"));
+    }
+
+    #[test]
+    fn generic_units_say_nothing() {
+        assert_eq!(unit_label("session-2.scope"), None);
+        assert_eq!(unit_label("init.scope"), None);
+        assert_eq!(unit_label("user@1000.service"), None);
+        assert_eq!(unit_label("app.slice"), None);
+        assert_eq!(unit_label(""), None);
+    }
 }

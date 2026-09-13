@@ -103,6 +103,16 @@ pub fn of(p: &crate::procs::ProcInfo) -> Identity {
 }
 
 pub fn resolve(facts: Facts<'_>) -> Identity {
+    // O cliente Steam relançado por um atalho carrega `steam://rungameid/2357570` na linha de
+    // comando e fica horas vivo depois do jogo fechar. Não é o jogo: é a Steam.
+    if is_steam_client(facts.name, facts.exe_path) {
+        return Identity {
+            key: "app:steam".into(),
+            label: "Steam".into(),
+            origin: None,
+            kind: Kind::Desktop,
+        };
+    }
     if let Some(id) = steam_id(&facts) {
         let label = windows_game_label(&facts)
             .or_else(|| steam_name(id))
@@ -363,6 +373,17 @@ fn is_wine_helper(name: &str) -> bool {
     )
 }
 
+/// Binários do próprio cliente Steam (não o runtime que embrulha o jogo).
+fn is_steam_client(name: &str, exe: &str) -> bool {
+    let n = basename(exe, name).to_ascii_lowercase();
+    let e = exe.to_ascii_lowercase();
+    matches!(
+        n.as_str(),
+        "steam" | "steam.sh" | "steamwebhelper" | "steamwebhelper_sniper_wrap.sh" | "steamservice"
+            | "steam-runtime-launcher-service" | "steamerrorreporter" | "fossilize_replay"
+    ) || ((e.contains("/steam/ubuntu12_32/") || e.contains("/steam/ubuntu12_64/")) && !n.ends_with(".exe"))
+}
+
 fn is_wine_runtime(name: &str, exe: &str) -> bool {
     is_wine_helper(name) || exe.to_ascii_lowercase().contains("/wine")
 }
@@ -559,6 +580,24 @@ mod tests {
             cmdline: cmd,
             ..Facts::default()
         }
+    }
+
+    #[test]
+    fn steam_client_relaunched_with_rungameid_is_steam_not_the_game() {
+        let id = resolve(facts(
+            "steam",
+            "/home/lol/.local/share/Steam/ubuntu12_32/steam",
+            "/home/lol/.local/share/Steam/ubuntu12_32/steam -srt-logger-opened -language brazilian steam://rungameid/2357570//--tank",
+        ));
+        assert_eq!(id.key, "app:steam");
+        assert_eq!(id.label, "Steam");
+        assert_eq!(id.kind, Kind::Desktop);
+        let helper = resolve(facts(
+            "steamwebhelper",
+            "/home/lol/.local/share/Steam/ubuntu12_64/steamwebhelper",
+            "steamwebhelper -steampid=3313888 -lang=pt_BR",
+        ));
+        assert_eq!(helper.key, "app:steam");
     }
 
     #[test]

@@ -22,8 +22,24 @@ impl Reader {
         let weak = Arc::downgrade(&latest);
         std::thread::spawn(move || {
             let mut drm = DrmCounters::default();
+            // Pico recente por PID. O pmon é uma foto instantânea: um render em rajada
+            // aparece num tick e some no seguinte, e a coluna virava loteria. Segurar o
+            // pico com meia-vida de ~5 s dá um número estável pra ler, ordenar e filtrar.
+            let mut held: HashMap<u32, (f32, Instant)> = HashMap::new();
             while let Some(latest) = weak.upgrade() {
-                let sample = collect(&mut drm);
+                let mut sample = collect(&mut drm);
+                let now = Instant::now();
+                for (pid, v) in sample.by_pid.iter_mut() {
+                    let decayed = held
+                        .get(pid)
+                        .map(|(old, at)| old * 0.5f32.powf(now.duration_since(*at).as_secs_f32() / 5.0))
+                        .unwrap_or(0.0);
+                    let merged = v.max(decayed);
+                    held.insert(*pid, (merged, now));
+                    *v = if merged < 0.5 { 0.0 } else { merged };
+                }
+                // Quem saiu da GPU sai do pico junto — contexto encerrado não assombra.
+                held.retain(|pid, _| sample.by_pid.contains_key(pid));
                 if let Ok(mut target) = latest.lock() {
                     *target = sample;
                 }
@@ -95,6 +111,9 @@ pub fn parse_pmon(text: &str) -> (HashMap<u32, f32>, HashMap<u32, u64>) {
             continue;
         };
         // SM/encode/decode busiest engine; memory utilization is bandwidth, not compute.
+        // A row full of "-" still means the process HAS a GPU context and was idle at
+        // this instant — that is a known 0, not "driver didn't say". Without it the GPU
+        // column showed "–" for almost everything and a min-GPU filter hid the world.
         let pct = ["sm", "enc", "dec", "jpg", "ofa"]
             .iter()
             .filter_map(|key| {
@@ -104,12 +123,11 @@ pub fn parse_pmon(text: &str) -> (HashMap<u32, f32>, HashMap<u32, u64>) {
                     .and_then(|i| f.get(i))
                     .and_then(|s| number(s))
             })
-            .reduce(f32::max);
-        if let Some(pct) = pct {
-            load.entry(pid)
-                .and_modify(|old| *old = old.max(pct))
-                .or_insert(pct.min(100.0));
-        }
+            .reduce(f32::max)
+            .unwrap_or(0.0);
+        load.entry(pid)
+            .and_modify(|old| *old = old.max(pct))
+            .or_insert(pct.min(100.0));
         if let Some(mb) = headers
             .iter()
             .position(|h| *h == "fb")
@@ -328,10 +346,13 @@ mod tests {
         assert_eq!(cards[1].temp_c, None);
     }
     #[test]
-    fn process_metrics_follow_headers_and_keep_unknown() {
+    fn process_metrics_follow_headers_and_idle_context_is_zero() {
         let (load, memory) = parse_pmon("# gpu pid type sm mem enc dec jpg ofa fb ccpm command\n0 42 G 10 80 - 20 - - 415 0 app\n0 43 G - - - - - - 5 0 idle\n");
         assert_eq!(load.get(&42), Some(&20.0));
-        assert!(!load.contains_key(&43));
+        // Linha toda "-" = contexto na GPU parado neste instante: 0% conhecido,
+        // não "sem leitura". PID fora do pmon continua fora do mapa.
+        assert_eq!(load.get(&43), Some(&0.0));
+        assert!(!load.contains_key(&99));
         assert_eq!(memory[&43], 5 * 1048576);
     }
 

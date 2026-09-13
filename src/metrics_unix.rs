@@ -45,6 +45,7 @@ impl Metrics {
         let (disk_pct, disk_bps) = (None, None);
         #[cfg(target_os = "linux")]
         let gpu = self.gpu.sample();
+        let load = read_loadavg();
         SysSample {
             cpu_pct: Some(self.sys.global_cpu_usage().clamp(0.0, 100.0)),
             disk_pct,
@@ -59,7 +60,26 @@ impl Metrics {
             gpu: None,
             #[cfg(not(target_os = "linux"))]
             gpu_by_pid: HashMap::new(),
+            load1: load.map(|l| l.0),
+            load5: load.map(|l| l.1),
+            load15: load.map(|l| l.2),
         }
+    }
+}
+
+fn read_loadavg() -> Option<(f32, f32, f32)> {
+    #[cfg(target_os = "linux")]
+    {
+        let text = std::fs::read_to_string("/proc/loadavg").ok()?;
+        return crate::pressure::parse_loadavg(&text);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let l = sysinfo::System::load_average();
+        if l.one < 0.0 && l.five < 0.0 && l.fifteen < 0.0 {
+            return None;
+        }
+        Some((l.one as f32, l.five as f32, l.fifteen as f32))
     }
 }
 

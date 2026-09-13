@@ -41,6 +41,7 @@ mod icons;
 mod kit;
 mod knowledge;
 mod metrics;
+mod pressure;
 mod procs;
 mod sampler;
 #[cfg(windows)]
