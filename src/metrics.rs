@@ -1,7 +1,8 @@
 //! Métricas de sistema além de RAM: CPU total, disco, GPU.
 //!
 //! Windows: PDH + NVML + GetSystemTimes (ver `metrics_win`).
-//! macOS/Linux: `sysinfo`. GPU por processo e NVML ficam `None`.
+//! Linux: `/proc/stat` + `/proc/diskstats` (%util e bytes/s). GPU via nvidia-smi/DRM.
+//! macOS: `sysinfo`. Disco % e GPU ficam `None`.
 
 use std::collections::HashMap;
 
@@ -20,11 +21,17 @@ pub struct GpuInfo {
 /// Uma amostra de tudo que não é RAM.
 #[derive(Clone, Debug, Default)]
 pub struct SysSample {
+    #[cfg(target_os = "linux")]
+    pub gpu_linux: crate::gpu_linux::Sample,
     pub cpu_pct: Option<f32>,
     pub disk_pct: Option<f32>,
     pub disk_bps: Option<f64>,
     pub gpu: Option<GpuInfo>,
     pub gpu_by_pid: HashMap<u32, f32>,
+    /// Load médio de 1/5/15 min. `None` no Windows (não existe o conceito).
+    pub load1: Option<f32>,
+    pub load5: Option<f32>,
+    pub load15: Option<f32>,
 }
 
 #[cfg(windows)]

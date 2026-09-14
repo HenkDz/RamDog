@@ -36,24 +36,16 @@ Write-Host "  $($release.tag_name)  $($asset.browser_download_url)"
 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing
 Expand-Archive -Path $zip -DestinationPath $tmp -Force
 
-$guiExe = Get-ChildItem $tmp -Filter 'ramdog-gui.exe' -Recurse | Select-Object -First 1
-$legacyExe = Get-ChildItem $tmp -Filter 'ramdog.exe' -Recurse | Select-Object -First 1
-$cliExe = Get-ChildItem $tmp -Filter 'ramdog-cli.exe' -Recurse | Select-Object -First 1
-if (-not $guiExe -and -not $legacyExe) { throw "Nenhum ramdog.exe/ramdog-gui.exe veio no zip." }
+$exe = Get-ChildItem $tmp -Filter 'ramdog.exe' -Recurse | Select-Object -First 1
+if (-not $exe) { throw "ramdog.exe não veio no zip." }
 
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
+# V0.10 exposes the CLI through ramdog.exe; remove the pre-v0.10 split CLI so
+# an upgrade cannot leave two binaries reporting different versions.
+$obsolete = Join-Path $dest 'ramdog-cli.exe'
+if (Test-Path $obsolete) { Remove-Item $obsolete -Force }
 Get-ChildItem $tmp -Recurse -File | ForEach-Object {
     Copy-Item $_.FullName (Join-Path $dest $_.Name) -Force
-}
-$guiPath = Join-Path $dest 'ramdog-gui.exe'
-if ($guiExe) {
-    Copy-Item $guiExe.FullName $guiPath -Force
-} elseif ($legacyExe) {
-    Copy-Item $legacyExe.FullName $guiPath -Force
-}
-if ($cliExe) {
-    Copy-Item $cliExe.FullName (Join-Path $dest 'ramdog.exe') -Force
-    Copy-Item $cliExe.FullName (Join-Path $dest 'ramdog-cli.exe') -Force
 }
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
@@ -72,7 +64,7 @@ function Add-RunAsShortcut([string]$path, [string]$target) {
     [IO.File]::WriteAllBytes($path, $bytes)
 }
 
-$target = if (Test-Path -LiteralPath $guiPath) { $guiPath } else { Join-Path $dest 'ramdog.exe' }
+$target = Join-Path $dest 'ramdog.exe'
 $startDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 New-Item -ItemType Directory -Force -Path $startDir | Out-Null
 Add-RunAsShortcut (Join-Path $startDir 'RamDog.lnk') $target
@@ -91,8 +83,7 @@ if ($env:Path -notlike "*$dest*") {
 
 Write-Host ""
 Write-Host "Instalado em $dest  ($($release.tag_name))"
-Write-Host "CLI:    ramdog snapshot --json"
-Write-Host "GUI:    ramdog-gui  ou o atalho RamDog no Desktop (UAC = temp da CPU)"
+Write-Host "Abrir:  ramdog    ou o atalho RamDog no Desktop (o RamDog pede elevacao ao abrir)"
 Write-Host ""
 
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue

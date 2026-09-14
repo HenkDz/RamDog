@@ -7,6 +7,8 @@
 //! O texto é curto de propósito — cabe numa linha do painel de detalhes. Nada aqui é
 //! consultado por amostra; é uma tabela estática, custo zero em tempo de execução.
 
+use crate::config::Locale;
+
 /// O que acontece se o processo for encerrado.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Risk {
@@ -24,6 +26,17 @@ impl Risk {
             Risk::Safe => "safe to terminate",
             Risk::Respawns => "respawns automatically",
             Risk::Fatal => "DO NOT terminate",
+        }
+    }
+
+    pub fn label_for(self, locale: Locale) -> &'static str {
+        match locale {
+            Locale::Portuguese => match self {
+                Risk::Safe => "seguro encerrar",
+                Risk::Respawns => "reinicia sozinho",
+                Risk::Fatal => "NÃO encerrar",
+            },
+            Locale::English => self.label(),
         }
     }
 
@@ -50,6 +63,17 @@ impl Risk {
             Risk::Fatal => "Critical process: terminating it causes a blue screen (CRITICAL_PROCESS_DIED) or immediately ends your session.",
         }
     }
+
+    pub fn tip_for(self, locale: Locale) -> &'static str {
+        match locale {
+            Locale::Portuguese => match self {
+                Risk::Safe => "Encerrar não quebra o Windows. Você só perde trabalho não salvo neste programa.",
+                Risk::Respawns => "O Windows reinicia este processo automaticamente. A RAM é liberada por alguns segundos e ele volta.",
+                Risk::Fatal => "Processo crítico: encerrá-lo causa tela azul (CRITICAL_PROCESS_DIED) ou encerra sua sessão imediatamente.",
+            },
+            Locale::English => self.tip(),
+        }
+    }
 }
 
 pub struct Known {
@@ -57,11 +81,51 @@ pub struct Known {
     pub what: &'static str,
     /// Por que ele está aberto agora — a pergunta que ninguém responde.
     pub why: &'static str,
+    what_pt: Option<&'static str>,
+    why_pt: Option<&'static str>,
     pub risk: Risk,
 }
 
 const fn k(what: &'static str, why: &'static str, risk: Risk) -> Known {
-    Known { what, why, risk }
+    Known {
+        what,
+        why,
+        what_pt: None,
+        why_pt: None,
+        risk,
+    }
+}
+
+const fn bilingual(
+    what: &'static str,
+    why: &'static str,
+    what_pt: &'static str,
+    why_pt: &'static str,
+    risk: Risk,
+) -> Known {
+    Known {
+        what,
+        why,
+        what_pt: Some(what_pt),
+        why_pt: Some(why_pt),
+        risk,
+    }
+}
+
+impl Known {
+    pub fn what_for(&self, locale: Locale) -> &'static str {
+        match locale {
+            Locale::Portuguese => self.what_pt.unwrap_or(self.what),
+            Locale::English => self.what,
+        }
+    }
+
+    pub fn why_for(&self, locale: Locale) -> &'static str {
+        match locale {
+            Locale::Portuguese => self.why_pt.unwrap_or(self.why),
+            Locale::English => self.why,
+        }
+    }
 }
 
 /// Ficha do processo pelo nome do executável (minúsculo, com ou sem `.exe`).
@@ -331,6 +395,71 @@ pub fn lookup(name_lower: &str) -> Option<Known> {
             "Installed with the graphics driver.",
             Risk::Respawns,
         ),
+
+        // ── Linux ────────────────────────────────────────────────────────────────────
+        "systemd" | "init" => bilingual(
+            "PID 1: starts the rest of the system, services, and the session.",
+            "Always open since boot. Terminating it takes down the machine.",
+            "PID 1: sobe o resto do sistema, serviços e a sessão.",
+            "Sempre aberto desde o boot. Encerrar derruba a máquina.",
+            Risk::Fatal,
+        ),
+        "kthreadd" => bilingual(
+            "Parent of all Linux kernel threads.",
+            "It is not a user program. Terminating it is not an option.",
+            "Pai de todas as kernel threads do Linux.",
+            "Não é um programa de usuário. Encerrar não é opção.",
+            Risk::Fatal,
+        ),
+        "dbus-daemon" | "dbus-broker" => bilingual(
+            "Message bus: desktop apps and services communicate through it.",
+            "Without it, the graphical session loses half its daemons.",
+            "Barramento de mensagens: apps e serviços do desktop falam por aqui.",
+            "Sem ele a sessão gráfica perde metade dos daemons.",
+            Risk::Fatal,
+        ),
+        "gnome-shell" | "kwin_wayland" | "kwin_x11" | "xorg" | "xwayland" => bilingual(
+            "Session compositor / graphics server.",
+            "Terminating it closes the graphical session immediately.",
+            "Compositor / servidor gráfico da sessão.",
+            "Encerrar fecha a sessão gráfica na hora.",
+            Risk::Fatal,
+        ),
+        "pipewire" | "pipewire-pulse" | "wireplumber" | "pulseaudio" => bilingual(
+            "Session audio (and sometimes video).",
+            "The session usually reopens it; audio is silent in the meantime.",
+            "Áudio (e às vezes vídeo) da sessão.",
+            "A sessão reabre sozinha na maioria dos desktops; você fica mudo no meio tempo.",
+            Risk::Respawns,
+        ),
+        "networkmanager" | "wpa_supplicant" | "iwd" | "systemd-networkd" => bilingual(
+            "Network stack: Wi-Fi, wired networking, and VPN.",
+            "System service. Terminating it cuts the network until systemd restarts it.",
+            "Pilha de rede: Wi-Fi, cabo, VPN.",
+            "Serviço de sistema. Encerrar corta a rede até o systemd religar.",
+            Risk::Respawns,
+        ),
+        "sshd" | "sshd-session" => bilingual(
+            "SSH server: accepts remote logins.",
+            "Terminating the current session disconnects you; systemd restarts the service itself.",
+            "Servidor SSH: aceita logins remotos.",
+            "Matar a sessão atual te desconecta; o serviço em si o systemd religa.",
+            Risk::Safe,
+        ),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{lookup, Risk};
+    use crate::config::Locale;
+
+    #[test]
+    fn linux_catalog_has_english_text() {
+        let known = lookup("systemd").expect("systemd catalog entry");
+        assert!(known.what_for(Locale::English).starts_with("PID 1:"));
+        assert!(known.what_for(Locale::Portuguese).contains("sobe"));
+        assert_eq!(Risk::Fatal.label_for(Locale::English), "DO NOT terminate");
+    }
 }

@@ -1,0 +1,1075 @@
+{
+  "title": "RamDog — guia completo, do primeiro lançamento à rotina",
+  "language": "pt-BR",
+  "coverage": {
+    "items": 141,
+    "chapters": 24,
+    "blocks": 91
+  },
+  "version_context": {
+    "linux": "desenvolvimento 0.9.1",
+    "windows": "release 0.9.0 no Wine; interface real, telemetria nativa não validada",
+    "macos": "capítulo documental; sem alegação de captura nativa",
+    "installation": "comandos de instalação acompanham latest; não alegar que 0.9.1 está publicada"
+  },
+  "chapters": [
+    {
+      "id": "C01",
+      "title": "Bem-vindo: seu primeiro mapa do RamDog",
+      "platform": "comum; Linux desenvolvimento 0.9.1",
+      "resources": [
+        "Lista",
+        "Árvore",
+        "Categorias",
+        "Visão geral"
+      ],
+      "blocks": [
+        {
+          "block_id": "C01-B01",
+          "text": "Bem-vindo ao RamDog. Vamos instalar, entender o consumo, proteger processos e organizar serviços e janelas. Siga na ordem ou volte ao capítulo de um recurso quando precisar.",
+          "feature_ids": [
+            "NAV-01"
+          ]
+        },
+        {
+          "block_id": "C01-B02",
+          "text": "Lista, Árvore e Categorias são três maneiras de olhar os mesmos processos. Partida, Desperdício, Térmico e Telas abrem assuntos próprios. Clique novamente no botão do recurso ativo para voltar à última visão de processos. Os nomes ajudam você a se localizar sem decorar ícones.",
+          "feature_ids": [
+            "NAV-01",
+            "NAV-02"
+          ]
+        },
+        {
+          "block_id": "C01-B03",
+          "text": "A parte principal foi gravada no Linux, numa versão de desenvolvimento. Depois veremos a interface da release Windows zero ponto nove ponto zero no Wine. Ali, o funcionamento da telemetria no Windows nativo não foi validado. Quando um recurso depender de outro sistema ou equipamento, essa diferença ficará identificada.",
+          "feature_ids": [
+            "MET-08"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "title": "Instalar, abrir e atualizar",
+      "platform": "Linux e macOS; alternativa comum",
+      "resources": [
+        "Instalação",
+        "Atualização",
+        "Linux",
+        "macOS",
+        "Launcher",
+        "Compilação"
+      ],
+      "blocks": [
+        {
+          "block_id": "C02-B01",
+          "text": "No Linux ou no macOS, copie o comando de instalação mostrado na tela. Ele escolhe o pacote da sua arquitetura, verifica o arquivo baixado e instala o aplicativo. Você também pode baixar o pacote correspondente na página de versões publicadas. No Linux, mantenha o executável e seu arquivo de abertura na mesma pasta.",
+          "feature_ids": [
+            "SET-02",
+            "SET-04"
+          ]
+        },
+        {
+          "block_id": "C02-B02",
+          "text": "As opções na tela permitem mudar o destino, fixar uma versão existente ou instalar sem abrir. O padrão acompanha a release mais recente. A versão de desenvolvimento desta gravação não significa que ela já esteja publicada.",
+          "feature_ids": [
+            "SET-03"
+          ]
+        },
+        {
+          "block_id": "C02-B03",
+          "text": "No Linux, use o comando de abertura mostrado na tela. Quando o gerenciador de serviços do usuário estiver disponível, ele mantém o aplicativo independente do terminal e tenta focar a janela já aberta na segunda chamada. Você também pode abrir o executável diretamente. É preciso uma sessão gráfica. A conexão remota por terminal, indicada na tela, não abre a janela sem acesso ao display.",
+          "feature_ids": [
+            "SET-07",
+            "SET-08"
+          ]
+        },
+        {
+          "block_id": "C02-B04",
+          "text": "Para atualizar, feche o RamDog, execute o instalador ou substitua o pacote e reabra. As preferências ficam separadas. Não há botão de atualização na interface. A documentação também explica como compilar; nessa alternativa, você precisa de Rust e das dependências nativas.",
+          "feature_ids": [
+            "SET-05",
+            "SET-10"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "title": "Entender CPU, RAM, GPU e disco",
+      "platform": "comum; detalhes Linux",
+      "resources": [
+        "CPU",
+        "RAM",
+        "GPU",
+        "VRAM",
+        "Disco",
+        "Sensores"
+      ],
+      "blocks": [
+        {
+          "block_id": "C03-B01",
+          "text": "CPU mostra a ocupação do conjunto de núcleos. RAM mostra uso e capacidade total. Temperaturas dependem de leitura disponível. Passe o mouse nas barras para entender os detalhes antes de procurar um responsável na lista.",
+          "feature_ids": [
+            "MET-01",
+            "MET-02"
+          ]
+        },
+        {
+          "block_id": "C03-B02",
+          "text": "No Linux, a memória global considera o total menos a memória disponível. No detalhe aparecem as somas de memória proporcional e privada dos processos que puderam ser lidos. A fração de processos com leitura detalhada importa: uma soma parcial não representa todos os processos. Compromisso global também pode aparecer nesse detalhe.",
+          "feature_ids": [
+            "MET-03"
+          ]
+        },
+        {
+          "block_id": "C03-B03",
+          "text": "GPU mostra os dados fornecidos pelo driver: carga, memória de vídeo e temperatura. Escolha outra placa pelo seletor. Passe o mouse para conferir potência e ventoinha disponíveis. Leitura global disponível não garante consumo por processo.",
+          "feature_ids": [
+            "MET-05",
+            "MET-06"
+          ]
+        },
+        {
+          "block_id": "C03-B04",
+          "text": "Disco mostra atividade e transferência, não espaço livre. Na tabela, o valor representa bytes lidos e escritos por segundo pelo processo. Um traço significa informação indisponível, nunca zero. Isso pode acontecer por permissão, driver ou limite do sistema. Os avisos da própria tela indicam o contexto disponível.",
+          "feature_ids": [
+            "MET-07",
+            "MET-08"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "title": "Controlar o ritmo sem parar seus aplicativos",
+      "platform": "comum",
+      "resources": [
+        "Pausa",
+        "Retomar",
+        "F5",
+        "Intervalo",
+        "Rodapé"
+      ],
+      "blocks": [
+        {
+          "block_id": "C04-B01",
+          "text": "O rodapé informa quantos processos existem, quantos estão exibidos e quanto tempo a última amostra levou. O contador de protegidos representa nomes que você travou manualmente. Passe o mouse sobre ele para consultar a lista. Processos críticos também têm proteção automática, além desses nomes.",
+          "feature_ids": [
+            "MET-09"
+          ]
+        },
+        {
+          "block_id": "C04-B02",
+          "text": "Clique em pausar para congelar a leitura atual. Os aplicativos continuam funcionando. Retomar devolve a atualização. No intervalo, escolha meio segundo, um, dois ou cinco segundos. Essa preferência fica salva. Partida, Telas e outros recursos têm consultas próprias; pausar os processos não congela obrigatoriamente todos esses painéis.",
+          "feature_ids": [
+            "MET-10",
+            "MET-11"
+          ]
+        },
+        {
+          "block_id": "C04-B03",
+          "text": "No modo completo, F cinco força uma leitura, inclusive durante a pausa. Para reler um painel específico, use também seu botão Atualizar. Ao deixar o mouse sobre a tabela, a ordem das linhas fica congelada para facilitar o clique. Os valores continuam mudando. Retire o ponteiro para acompanhar a ordenação novamente.",
+          "feature_ids": [
+            "MET-12",
+            "MET-13"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "title": "Encontrar o aplicativo certo na Lista",
+      "platform": "comum",
+      "resources": [
+        "Busca",
+        "PID",
+        "Agrupar por app",
+        "Filtros",
+        "Ordenação",
+        "Colunas"
+      ],
+      "blocks": [
+        {
+          "block_id": "C05-B01",
+          "text": "Na Lista, desligue Agrupar por app para enxergar cada processo pelo seu PID. Ligue novamente para reunir instâncias do mesmo aplicativo. O cabeçalho soma os recursos dos membros e mostra a quantidade. O agrupamento reconhece famílias conhecidas e caminhos de executáveis; não junta qualquer programa apenas porque o nome parece igual.",
+          "feature_ids": [
+            "LST-01",
+            "LST-02"
+          ]
+        },
+        {
+          "block_id": "C05-B02",
+          "text": "Abra a seta de um grupo para ver seus processos. Expandir tudo abre os grupos disponíveis; Recolher deixa a visão compacta. A idade do cabeçalho acompanha o processo mais antigo daquele grupo. Ao fazer uma busca, as correspondências podem aparecer abertas automaticamente, mesmo que o grupo estivesse recolhido antes.",
+          "feature_ids": [
+            "LST-03"
+          ]
+        },
+        {
+          "block_id": "C05-B03",
+          "text": "A busca encontra trechos do nome, caminho, comando e identificação do lançador. Para procurar um processo pelo número, digite o identificador completo. O botão de xis apaga a busca. Em Ocultar abaixo de, arraste ou digite o limite de memória. Com limite zero, todos aparecem. O filtro acompanha a medida de memória selecionada no controle ao lado.",
+          "feature_ids": [
+            "LST-04",
+            "LST-05"
+          ]
+        },
+        {
+          "block_id": "C05-B04",
+          "text": "Clique no cabeçalho de uma coluna para ordenar e clique outra vez para inverter. Isso funciona em nome, memória, CPU, GPU, disco, categoria, PID, idade e origem. Arraste as divisórias para ajustar larguras. Passe o mouse no texto cortado para ler mais. Comando e Ações não são cabeçalhos de ordenação.",
+          "feature_ids": [
+            "LST-10",
+            "LST-11"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "title": "Escolher a medida de memória",
+      "platform": "comum; PSS e Virtual Linux",
+      "resources": [
+        "RSS",
+        "PSS",
+        "USS",
+        "Privado",
+        "Commit",
+        "Virtual"
+      ],
+      "blocks": [
+        {
+          "block_id": "C06-B01",
+          "text": "O seletor coluna RAM mostra muda o significado da coluna. Residente, ou RSS no Linux, inclui a memória física e as páginas compartilhadas usadas pelo processo. Por isso, somar todas as linhas pode contar uma mesma página mais de uma vez. Essa soma pode ultrapassar o total físico em uso.",
+          "feature_ids": [
+            "LST-06"
+          ]
+        },
+        {
+          "block_id": "C06-B02",
+          "text": "A memória proporcional, PSS, divide as páginas compartilhadas entre quem as usa. Privado mostra memória exclusiva quando a leitura está disponível. No Linux, traços indicam dados ausentes, e o sinal de maior ou igual marca agregados parciais. Confira a cobertura de leitura no rodapé antes de comparar os totais.",
+          "feature_ids": [
+            "LST-07",
+            "LST-08"
+          ]
+        },
+        {
+          "block_id": "C06-B03",
+          "text": "Virtual representa espaço de endereçamento no Linux e não é uma medida de RAM realmente ocupada. No Windows, Commit tem outro significado: memória confirmada, esteja na RAM ou no arquivo de paginação. Na Árvore, a coluna soma os descendentes. O painel de detalhes separa o consumo próprio do consumo com os filhos.",
+          "feature_ids": [
+            "LST-09",
+            "DET-10"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "title": "Categorias e preferências por aplicativo",
+      "platform": "comum",
+      "resources": [
+        "Categorias",
+        "Regra automática",
+        "Personalização",
+        "IA e agentes"
+      ],
+      "blocks": [
+        {
+          "block_id": "C07-B01",
+          "text": "Os chips separam Inteligência Artificial e Agentes, Desenvolvimento, Navegador, Jogos, Pessoal, Sistema e Outros. Um clique alterna uma categoria. Dois cliques isolam só aquela. Use todas para restaurar o conjunto. O número do chip resume a memória da categoria; o detalhe mostra a quantidade de processos.",
+          "feature_ids": [
+            "CAT-01"
+          ]
+        },
+        {
+          "block_id": "C07-B02",
+          "text": "Na visão Categorias, clique nas faixas para recolher ou expandir os grupos. Assim você compara o consumo entre atividades, como navegação e desenvolvimento. Os totais dos chips não se limitam ao texto da busca.",
+          "feature_ids": [
+            "CAT-02"
+          ]
+        },
+        {
+          "block_id": "C07-B03",
+          "text": "Se uma classificação automática não combina com sua rotina, use o botão direito, Categoria, e escolha outra. O combo do painel inferior faz a mesma alteração. A escolha vale para o nome do executável, incluindo outras instâncias, e fica salva. Para desfazer, escolha Regra automática ou clique em auto nos detalhes.",
+          "feature_ids": [
+            "CAT-03",
+            "CAT-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "title": "Ler os detalhes e descobrir a origem",
+      "platform": "comum; exemplos Linux",
+      "resources": [
+        "Detalhes",
+        "Origem",
+        "Launcher",
+        "Comando",
+        "Hash",
+        "Descritores FD"
+      ],
+      "blocks": [
+        {
+          "block_id": "C08-B01",
+          "text": "Clique numa linha para abrir a ficha. Arraste a borda do painel inferior para dar mais espaço e role os detalhes. Você encontra executável e comando completos. Sem acesso significa que a leitura não foi permitida. Escape, fora de um campo de texto, limpa a seleção. Sem seleção, o painel destaca os maiores consumidores.",
+          "feature_ids": [
+            "DET-01",
+            "DET-04"
+          ]
+        },
+        {
+          "block_id": "C08-B02",
+          "text": "Origem mostra a relação com processos ancestrais. Clique num nome da cadeia ou use Ir para o pai no menu para navegar. Lançado por, em roxo, acrescenta agente, sessão, host ou projeto quando o ambiente herdado permite reconhecer isso. É uma indicação útil, não um histórico completo nem uma prova de autoria.",
+          "feature_ids": [
+            "DET-02",
+            "DET-03"
+          ]
+        },
+        {
+          "block_id": "C08-B03",
+          "text": "No menu de contexto, você pode copiar a linha de comando, copiar o caminho ou abrir a pasta do executável. Em Execução aparecem idade, CPU suavizada, último intervalo e quantidade de threads. No Linux, descritores são a contagem de arquivos e recursos abertos. Aqui vemos a quantidade, não uma lista de cada arquivo.",
+          "feature_ids": [
+            "DET-05",
+            "DET-11"
+          ]
+        },
+        {
+          "block_id": "C08-B04",
+          "text": "Para nomes conhecidos, a ficha explica a função do processo e o risco de encerrar. Mesmo uma ação segura para o sistema pode causar perda de trabalho não salvo. Na distribuição Linux indicada na tela, pacote e código de verificação podem ser comparados ao banco local do gerenciador de pacotes. Essa conferência não é uma assinatura digital. O consumo gráfico por processo aparece quando o driver informa.",
+          "feature_ids": [
+            "DET-06",
+            "DET-08",
+            "DET-12"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "title": "Proteger antes de encerrar",
+      "platform": "comum",
+      "resources": [
+        "Lock",
+        "Proteção",
+        "Encerrar",
+        "Delete",
+        "Del",
+        "Risco"
+      ],
+      "blocks": [
+        {
+          "block_id": "C09-B01",
+          "text": "Antes de encerrar processos, proteja o que precisa continuar. Clique no cadeado da linha, escolha a opção de proteção no menu ou use o botão dos detalhes. A proteção vale para todas as instâncias do mesmo nome e fica salva. Processos críticos recebem proteção automática. Essas regras impedem ações feitas por este aplicativo; outros programas e o sistema continuam independentes.",
+          "feature_ids": [
+            "ACT-01",
+            "ACT-02"
+          ]
+        },
+        {
+          "block_id": "C09-B02",
+          "text": "Neste exemplo descartável, o xis da linha encerra o processo imediatamente. Delete, Finalizar processo no menu e Finalizar nos detalhes são caminhos equivalentes. Não aparece caixa de confirmação. Use esses controles depois de salvar o trabalho e identificar a linha. Enquanto você digita num campo de texto, Delete pertence ao campo.",
+          "feature_ids": [
+            "ACT-03"
+          ]
+        },
+        {
+          "block_id": "C09-B03",
+          "text": "Depois da ação, leia o aviso. Ele informa processos finalizados, protegidos poupados ou falhas de permissão. A memória indicada como liberada é uma estimativa baseada nos consumos da ação. Confira o medidor global para acompanhar a máquina; aquele aviso não é uma medição exata da redução física de RAM.",
+          "feature_ids": [
+            "ACT-06"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "title": "Árvore, filhos e encerramento de um app inteiro",
+      "platform": "comum",
+      "resources": [
+        "Árvore",
+        "Filhos",
+        "Subárvore",
+        "Encerrar app"
+      ],
+      "blocks": [
+        {
+          "block_id": "C10-B01",
+          "text": "Na Árvore, cada nível mostra quem está ligado a quem. Abra pela seta ou com dois cliques na linha. Expandir tudo e Recolher controlam a visão inteira. Um ancestral esmaecido pode permanecer para dar contexto a um filtro. Compare sempre a memória deste processo com a soma dele e dos filhos.",
+          "feature_ids": [
+            "TRE-01",
+            "DET-10"
+          ]
+        },
+        {
+          "block_id": "C10-B02",
+          "text": "Para encerrar uma árvore, selecione o pai e use Shift com Delete, Shift com o xis ou Finalizar árvore no menu ou nos detalhes. Os descendentes protegidos são poupados. Se o próprio pai estiver travado, a solicitação é barrada. Nesta demonstração, o filho protegido permanece enquanto os processos descartáveis são encerrados.",
+          "feature_ids": [
+            "ACT-04"
+          ]
+        },
+        {
+          "block_id": "C10-B03",
+          "text": "Na Lista agrupada, o xis do cabeçalho age sobre os processos daquele grupo, mesmo sem relação de pai e filho. Ele também respeita locks. Isso é diferente de finalizar uma árvore. Use uma busca e filtros conscientes para saber o conjunto exibido. Para liberar novamente o exemplo protegido, clique em Desproteger.",
+          "feature_ids": [
+            "ACT-05",
+            "ACT-01"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "title": "Acompanhar a máquina no modo Mini",
+      "platform": "comum; fans dependem do equipamento",
+      "resources": [
+        "Mini",
+        "Sempre no topo",
+        "Opacidade",
+        "Fans",
+        "Restaurar"
+      ],
+      "blocks": [
+        {
+          "block_id": "C11-B01",
+          "text": "Clique em Mini para transformar o RamDog num painel compacto. CPU, RAM, GPU e disco ficam em dois por dois, com temperaturas e rotações disponíveis. Arraste pelo fundo para posicionar. O botão topo alterna a preferência de ficar sobre outras janelas. O modo e essa preferência são lembrados quando você reabre.",
+          "feature_ids": [
+            "MINI-01",
+            "MINI-02",
+            "MINI-03"
+          ]
+        },
+        {
+          "block_id": "C11-B02",
+          "text": "Na janela pequena, o botão de pausa congela a leitura; a seta retoma. Clique no intervalo para alternar entre meio segundo, um segundo, dois segundos e cinco segundos. A função desses controles é a mesma do rodapé da janela principal. Os atalhos F cinco e Delete, usados na janela completa, não funcionam nessa janela pequena.",
+          "feature_ids": [
+            "MINI-04",
+            "MINI-05"
+          ]
+        },
+        {
+          "block_id": "C11-B03",
+          "text": "O traço minimiza; volte pela barra de tarefas ou pelo gerenciador de janelas. O botão expandir retorna à janela completa. Dois cliques no fundo também retornam. O xis fecha o aplicativo, por isso use expandir quando quiser continuar trabalhando. Se fechar no Mini, a próxima abertura pode voltar ao mesmo modo.",
+          "feature_ids": [
+            "MINI-06",
+            "MINI-07",
+            "MINI-08"
+          ]
+        },
+        {
+          "block_id": "C11-B04",
+          "text": "A faixa inferior pode mostrar rotações e o botão Estabilizar. Ele usa o mesmo controle de ventoinhas da tela Térmico. Se o equipamento ou a autenticação não fornecerem controle, o botão não fica disponível. Ver temperatura ou rotação, sozinho, não significa que aquela ventoinha pode ser ajustada.",
+          "feature_ids": [
+            "MINI-09"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "title": "Partida Linux: agora ou no próximo login",
+      "platform": "Linux",
+      "resources": [
+        "Partida Linux",
+        "systemd",
+        "XDG",
+        "Iniciar",
+        "Parar",
+        "Boot"
+      ],
+      "blocks": [
+        {
+          "block_id": "C12-B01",
+          "text": "Partida reúne serviços, temporizadores, sockets e aplicativos de login. A origem distingue usuário, sistema e autostart. Leia Estado e RAM para entender o que foi encontrado. Use o campo Buscar dentro do painel Linux para filtrar nome, descrição ou tipo. Atualizar relê o inventário; avisos de acesso ficam na própria tela.",
+          "feature_ids": [
+            "BL-01",
+            "BL-02"
+          ]
+        },
+        {
+          "block_id": "C12-B02",
+          "text": "O checkbox Iniciar responde se aquela entrada deve subir automaticamente. Desmarcar não encerra um serviço já rodando. Marcar não o inicia imediatamente. Para aplicativos de autostart, a mudança vale no próximo login. Entradas essenciais, estáticas ou gerenciadas por dependências podem aparecer com o controle bloqueado.",
+          "feature_ids": [
+            "BL-03"
+          ]
+        },
+        {
+          "block_id": "C12-B03",
+          "text": "Para agir agora, use Iniciar ou Parar na coluna Ações de uma unidade. Aqui usamos um serviço criado apenas para a demonstração. Ações de sistema podem pedir autenticação; unidades de usuário dependem do barramento da sessão. Não é necessário abrir a interface inteira como root para usar esses controles.",
+          "feature_ids": [
+            "BL-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "title": "Salvar e restaurar um preset de Partida",
+      "platform": "Linux",
+      "resources": [
+        "Presets Linux",
+        "Salvar",
+        "Diferenças",
+        "Restaurar",
+        "Aplicar"
+      ],
+      "blocks": [
+        {
+          "block_id": "C13-B01",
+          "text": "Depois de revisar sua partida, dê um nome ao preset e clique em Salvar estado atual. Ele guarda ligado ou desligado das entradas que podem ser alteradas. Não guarda se o serviço estava executando naquele instante. Salvar outro estado com o mesmo nome substitui o preset anterior.",
+          "feature_ids": [
+            "BL-05"
+          ]
+        },
+        {
+          "block_id": "C13-B02",
+          "text": "Abra Carregar preset e escolha o nome. Antes de aplicar, o RamDog lista as diferenças concretas: o que será habilitado e o que será desabilitado. Aplicar alterações executa essa lista; Cancelar abandona a proposta. Confira o resultado. Se uma operação falhar, não presuma que todas as anteriores foram automaticamente desfeitas.",
+          "feature_ids": [
+            "BL-06",
+            "BL-07"
+          ]
+        },
+        {
+          "block_id": "C13-B03",
+          "text": "O preset não recria entradas ausentes. A interface Linux atual também não oferece excluir presets de Partida. Use nomes claros, como trabalho ou apresentação. Depois veremos onde guardar uma cópia das configurações.",
+          "feature_ids": [
+            "BL-05",
+            "BL-07"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "title": "Desperdício Linux: revisar serviços em segundo plano",
+      "platform": "Linux",
+      "resources": [
+        "Desperdício Linux",
+        "Serviços",
+        "Atualizar",
+        "Parar",
+        "Desabilitar"
+      ],
+      "blocks": [
+        {
+          "block_id": "C14-B01",
+          "text": "Desperdício, no Linux, lista unidades em segundo plano e ordena o consumo de memória que conseguiu medir. Confira nome, origem, descrição e número do processo antes de agir. O filtro Somente em execução esconde unidades paradas. Para ver as unidades paradas, deixe esse filtro desligado. Clique em Atualizar para consultar o estado novamente. Se faltarem dados para medir a memória, isso não significa consumo zero.",
+          "feature_ids": [
+            "DL-01"
+          ]
+        },
+        {
+          "block_id": "C14-B02",
+          "text": "No serviço exclusivo de demonstração, Iniciar coloca a unidade em execução. Parar interrompe agora. Reiniciar faz um novo ciclo de parada e abertura. Os botões acompanham o estado atual, e unidades protegidas não oferecem ações destrutivas. Observe o estado depois de cada clique, sem repetir a ação enquanto ela está pendente.",
+          "feature_ids": [
+            "DL-02"
+          ]
+        },
+        {
+          "block_id": "C14-B03",
+          "text": "A opção Iniciar no boot permite a partida futura; Não iniciar no boot a desabilita. Isso é diferente dos botões Iniciar e Parar, que atuam agora. Leia a descrição e decida conforme sua rotina. Um serviço listado aqui não é necessariamente inútil. Desligar serviços não garante uma quantidade fixa de memória economizada nem um ganho fixo de desempenho.",
+          "feature_ids": [
+            "DL-03"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "title": "Térmico: conhecer as leituras disponíveis",
+      "platform": "Linux; diferenças de hardware",
+      "resources": [
+        "Térmico",
+        "Temperaturas",
+        "RPM",
+        "PWM",
+        "hwmon",
+        "Sensores"
+      ],
+      "blocks": [
+        {
+          "block_id": "C15-B01",
+          "text": "Térmico agrupa os sensores por componente. O destaque do cartão é a maior temperatura daquele grupo; abaixo ficam as demais leituras oferecidas pelo hardware. Role para conferir todos os cartões. Nem toda placa expõe temperatura de memória, rotação ou consumo. A ausência de um sensor não deve ser preenchida com uma estimativa.",
+          "feature_ids": [
+            "TH-01",
+            "CFG-06"
+          ]
+        },
+        {
+          "block_id": "C15-B02",
+          "text": "No Linux, a interface indicada na tela fornece as leituras dos sensores. Quando o driver oferece controle PWM, aparece Ativar controle de ventoinhas, com autenticação. O botão autoriza um auxiliar separado; a janela continua como usuário normal. Use as rotações disponíveis para acompanhar o equipamento. Ler rotações por minuto não garante permissão para escrever no controle PWM.",
+          "feature_ids": [
+            "TH-03"
+          ]
+        },
+        {
+          "block_id": "C15-B03",
+          "text": "A gravação pode mostrar leituras reais e explicar controles que este equipamento não libera. Isso é diferente de mostrar uma ventoinha respondendo a um ajuste. Antes de controlar hardware, identifique o controlador e evite dois programas tentando ajustar o mesmo PWM. As opções Manual, Auto e Estabilizar serão explicadas a seguir.",
+          "feature_ids": [
+            "TH-01",
+            "TH-03"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "title": "Manual, Auto e Estabilizar",
+      "platform": "Windows e Linux; hardware compatível",
+      "resources": [
+        "Controle de fans",
+        "Manual",
+        "Auto",
+        "Estabilizar",
+        "Permissões"
+      ],
+      "blocks": [
+        {
+          "block_id": "C16-B01",
+          "text": "Com controle disponível, arraste o slider ou digite a porcentagem. No Linux, a faixa manual vai de trinta a cem por cento. No Windows, vai de zero a cem. O ajuste é enviado ao concluir o gesto. A proteção térmica pode forçar cem por cento quando a CPU atinge oitenta graus, até esfriar.",
+          "feature_ids": [
+            "TH-04"
+          ]
+        },
+        {
+          "block_id": "C16-B02",
+          "text": "Auto solta o ajuste manual. No Windows, devolve o controle à BIOS. No Linux, restaura o estado anterior do controlador, que também pode ter sido manual. Por isso, Auto não significa a mesma implementação em todos os sistemas. Confira a resposta do equipamento e a indicação de estado mostrada na linha da ventoinha.",
+          "feature_ids": [
+            "TH-05"
+          ]
+        },
+        {
+          "block_id": "C16-B03",
+          "text": "Estabilizar usa uma curva: cinquenta por cento até oitenta graus, subindo até cem aos noventa e dois. A noventa e cinco, entra o teto imediato. A variação normal é limitada para evitar mudanças bruscas. Enquanto a curva está ativa, os controles manuais ficam bloqueados. Clique novamente para soltar o modo.",
+          "feature_ids": [
+            "TH-06"
+          ]
+        },
+        {
+          "block_id": "C16-B04",
+          "text": "O helper procura restaurar o controle quando o RamDog termina. No Linux, também trata encerramento normal e sinais de término. Uma interrupção brutal do próprio helper ou falta de energia não permite executar restauração. Esses controles são para ventoinhas compatíveis da placa-mãe; não substituem a curva própria da ventoinha da GPU.",
+          "feature_ids": [
+            "TH-07"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "title": "Telas Linux: selecionar, mover e organizar",
+      "platform": "Linux com Hyprland isolado",
+      "resources": [
+        "Telas Linux",
+        "Hyprland",
+        "Grade",
+        "Arrastar",
+        "Mosaico",
+        "Foco"
+      ],
+      "blocks": [
+        {
+          "block_id": "C17-B01",
+          "text": "Telas no Linux precisa de Hyprland. Outros compositores e uma sessão X onze não oferecem esse backend. Aqui, o mapa deve mostrar apenas monitores e janelas da sessão isolada de demonstração. Atualizar relê o arranjo. Se aparecer um aviso de indisponibilidade, ele descreve o ambiente; não significa que as janelas foram organizadas.",
+          "feature_ids": [
+            "SL-01"
+          ]
+        },
+        {
+          "block_id": "C17-B02",
+          "text": "Clique num retângulo do mapa ou no checkbox da lista para selecionar uma janela. Você pode selecionar várias. Escolha o monitor de destino e a grade: Inteira, duas colunas, três colunas ou quatro quadrantes. Cada seleção continua visível, para você conferir quais janelas participarão antes de mover qualquer uma.",
+          "feature_ids": [
+            "SL-02",
+            "SL-03",
+            "SL-04"
+          ]
+        },
+        {
+          "block_id": "C17-B03",
+          "text": "Organizar selecionadas encaixa esse conjunto nas zonas escolhidas. Se houver mais janelas que zonas, algumas podem se sobrepor. Para mover individualmente, arraste o retângulo. Com Encaixar na grade ligado, ele cai numa zona; desligado, a posição fica livre dentro da área útil. O ajuste pode colocar a janela em modo flutuante.",
+          "feature_ids": [
+            "SL-05",
+            "SL-06"
+          ]
+        },
+        {
+          "block_id": "C17-B04",
+          "text": "O botão Focar ativa a janela correspondente. Quando ela está flutuante, Voltar ao mosaico devolve a organização ao gerenciador de janelas indicado na tela. Esse botão devolve o controle ao compositor; ele não recupera uma posição antiga. Na rotina, selecione somente as janelas que pretende reorganizar e confira o monitor antes de aplicar a grade.",
+          "feature_ids": [
+            "SL-07",
+            "SL-08"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "title": "Telas Linux: salvar uma rotina como cenário",
+      "platform": "Linux com Hyprland isolado",
+      "resources": [
+        "Cenários Linux",
+        "Salvar",
+        "Aplicar",
+        "Abrir ausentes",
+        "Executável"
+      ],
+      "blocks": [
+        {
+          "block_id": "C18-B01",
+          "text": "Arrume as janelas, selecione as que pertencem à rotina, dê um nome e clique em Salvar selecionadas. O cenário guarda executáveis e posições em frações da área útil, junto do monitor. Ele salva as janelas selecionadas, não todo o desktop. Usar o mesmo nome substitui o cenário anterior.",
+          "feature_ids": [
+            "SL-09"
+          ]
+        },
+        {
+          "block_id": "C18-B02",
+          "text": "Expanda o cenário e revise Abrir se fechada em cada item. Desmarcado, o cenário só procura o que já existe. Marcado, tenta abrir o programa ausente. Aplicar cenário reposiciona as correspondências e aguarda as novas janelas por alguns segundos. Veja o resultado e eventuais erros, em vez de assumir que todos os programas abriram.",
+          "feature_ids": [
+            "SL-10",
+            "SL-11"
+          ]
+        },
+        {
+          "block_id": "C18-B03",
+          "text": "Cenários não recuperam documentos ou sessões internas dos aplicativos. Se o monitor salvo não puder ser encontrado pelo nome nem pelo índice, a aplicação pode falhar. A interface Linux atual não oferece excluir cenário nem editar manualmente todos os campos de cada item. Para outra configuração, rearrume, selecione e salve novamente com um nome claro.",
+          "feature_ids": [
+            "SL-09",
+            "SL-10",
+            "SL-11"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "title": "Windows: abrir, medir e conferir confiança",
+      "platform": "Windows release 0.9.0 no Wine; comportamento nativo documentado",
+      "resources": [
+        "Windows",
+        "Admin",
+        "UAC",
+        "Assinatura",
+        "Confiança",
+        "Sensores"
+      ],
+      "blocks": [
+        {
+          "block_id": "C19-B01",
+          "text": "Agora estamos na interface da release Windows zero ponto nove ponto zero, executada no Wine. A telemetria nativa não foi validada nesta gravação. No Windows, o comando PowerShell da tela instala o pacote e cria atalhos. Ao abrir, a elevação libera ações e leituras adicionais. Se estiver limitado, o botão Admin permite tentar reabrir elevado.",
+          "feature_ids": [
+            "SET-01",
+            "SET-06"
+          ]
+        },
+        {
+          "block_id": "C19-B02",
+          "text": "No Windows, Privado corresponde ao conjunto de memória exclusivo do processo; Commit representa memória confirmada. O detalhe da RAM separa processos, pools do kernel e uma parcela calculada por diferença. O chip Sistema não processo mostra ou esconde essas linhas especiais. Elas não têm PID nem botão de finalizar, e escondê-las não reduz o consumo.",
+          "feature_ids": [
+            "MET-04",
+            "CAT-05",
+            "LST-08",
+            "LST-09"
+          ]
+        },
+        {
+          "block_id": "C19-B03",
+          "text": "Ao selecionar um executável, a assinatura é consultada sob demanda. O resultado pode informar signatário, ausência, falha ou impossibilidade de verificar. A consulta usa confiança local, sem checagem de revogação pela rede. Assinatura não é antivírus. Quando um processo hospeda serviços, a ficha também os relaciona; o expansor mostra os restantes.",
+          "feature_ids": [
+            "DET-07",
+            "DET-09"
+          ]
+        },
+        {
+          "block_id": "C19-B04",
+          "text": "Para sensores completos no Windows, deixe o auxiliar identificado na tela junto do executável e instale o ambiente ponto net oito. Leituras de CPU, memória e ventoinhas dependem de permissões e equipamento compatível. A placa NVIDIA pode oferecer outra forma de leitura. Se faltar o auxiliar ou suporte, a tela explica. Um traço indica que a leitura não foi obtida.",
+          "feature_ids": [
+            "TH-02",
+            "SET-04",
+            "SET-10"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "title": "Partida Windows: fontes, fases e presets",
+      "platform": "Windows release 0.9.0 no Wine; comportamento nativo documentado",
+      "resources": [
+        "Partida Windows",
+        "Fontes",
+        "Fases",
+        "Presets",
+        "Scan",
+        "Remover"
+      ],
+      "blocks": [
+        {
+          "block_id": "C20-B01",
+          "text": "No Windows, Partida reúne entradas do registro, pasta Iniciar, tarefas agendadas, serviços, aplicativos empacotados, Winlogon e Active Setup. A origem diz onde cada entrada mora; o escopo distingue sua conta da máquina. Selecione uma linha para ler comando, origem e fase. Alguns pontos do arranque são somente leitura por serem sensíveis.",
+          "feature_ids": [
+            "BW-01",
+            "BW-12"
+          ]
+        },
+        {
+          "block_id": "C20-B02",
+          "text": "Use a busca para nome, comando ou origem; o xis limpa e Atualizar relê. Os contadores Sobe com o PC, Não sobe e Quebradas isolam esses estados. Clique outra vez para voltar ao conjunto. Quebrada significa destino ausente. Os chips de origem filtram tipos e mantêm pelo menos um tipo selecionado.",
+          "feature_ids": [
+            "BW-02",
+            "BW-03",
+            "BW-04"
+          ]
+        },
+        {
+          "block_id": "C20-B03",
+          "text": "Separar por oferece cinco opções: estado seguido de fase, estado seguido de tipo, só fase, só tipo e lista plana. As fases são Seus programas, Ao entrar na conta, Com a máquina e Antes do Windows. Clique nas faixas para abrir ou recolher. Os botões de expansão controlam todos os grupos.",
+          "feature_ids": [
+            "BW-05",
+            "BW-06"
+          ]
+        },
+        {
+          "block_id": "C20-B04",
+          "text": "Você também pode esconder Microsoft ou mostrar somente o que está rodando. Os cabeçalhos ordenam nome, tipo de origem, escopo, estado atual e uso. O checkbox da entrada controla a partida, enquanto Agora informa execução. Ligar a partida não significa iniciar neste instante; desligar não encerra o processo que já existe.",
+          "feature_ids": [
+            "BW-07",
+            "BW-08",
+            "BW-09"
+          ]
+        },
+        {
+          "block_id": "C20-B05",
+          "text": "O botão Finalizar encerra o processo ligado à entrada e respeita as proteções do aplicativo. Remover abre uma confirmação para apagar a entrada de partida. O programa continua instalado. A entrada removida não tem restauração automática. Leia a descrição e escolha Confirmar ou Cancelar. Entradas que afetam a máquina inteira podem pedir permissão de administrador.",
+          "feature_ids": [
+            "BW-10",
+            "BW-11"
+          ]
+        },
+        {
+          "block_id": "C20-B06",
+          "text": "Para presets, escreva um nome e use Salvar atual. Escolha pelo combo e clique em Aplicar para revisar as mudanças antes de confirmar. Excluir remove o preset salvo, não os programas. O preset guarda estados alternáveis. Entradas que sumiram não são recriadas. Quando necessário, alterações de máquina em lote podem solicitar elevação.",
+          "feature_ids": [
+            "BW-13"
+          ]
+        },
+        {
+          "block_id": "C20-B07",
+          "text": "Scan de uso mostra programas frequentes a partir do histórico de foco do Windows e do tempo observado pelo RamDog. O painel traz tempo, aberturas e última utilização. Se ainda não existe histórico, pode ficar vazio. Mais Partida cria um atalho de usuário; quem já participa recebe um selo. Fechar encerra apenas o painel.",
+          "feature_ids": [
+            "BW-14",
+            "BW-15"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "title": "Desperdício Windows: entender cada efeito",
+      "platform": "Windows release 0.9.0 no Wine; comportamento nativo documentado",
+      "resources": [
+        "Desperdício Windows",
+        "Defender",
+        "Serviços",
+        "Bloatware",
+        "Appx",
+        "Telemetria"
+      ],
+      "blocks": [
+        {
+          "block_id": "C21-B01",
+          "text": "Atualizar relê os dados do Desperdício Windows. A seção Defender informa proteção em tempo real, proteção contra alterações e carga de varredura. Essas integrações podem faltar no Wine; a interface real não comprova funcionamento nativo nesta gravação.",
+          "feature_ids": [
+            "DW-01",
+            "DW-02"
+          ]
+        },
+        {
+          "block_id": "C21-B02",
+          "text": "No campo de exclusões, cada linha representa uma pasta. Adicionar exclusões abre a revisão dos caminhos. Confirmar tira esses arquivos da verificação em tempo real; Cancelar abandona. Isso muda a proteção, portanto não é um passo obrigatório de otimização. A interface não oferece um botão correspondente para remover todas essas exclusões depois.",
+          "feature_ids": [
+            "DW-03"
+          ]
+        },
+        {
+          "block_id": "C21-B03",
+          "text": "Os botões cinco, dez e vinte por cento ajustam a carga média da varredura agendada, não todo consumo do Defender. Pausar tempo real também altera proteção e exige confirmação. Reativar tempo real a devolve. Com proteção contra alterações ligada, a pausa fica bloqueada e pode aparecer Abrir Segurança do Windows.",
+          "feature_ids": [
+            "DW-04",
+            "DW-05"
+          ]
+        },
+        {
+          "block_id": "C21-B04",
+          "text": "Nos serviços, Parar vale para agora. Desativar para e muda a inicialização para impedir nova partida; há confirmação. Reativar devolve a possibilidade de iniciar conforme a configuração usada pelo aplicativo. Leia a descrição e o estado antes de agir. Um serviço dispensável para uma pessoa pode sustentar recursos usados por outra.",
+          "feature_ids": [
+            "DW-06"
+          ]
+        },
+        {
+          "block_id": "C21-B05",
+          "text": "A lista inclui busca, o serviço de pré-carregamento identificado na tela, telemetria, entrega de atualizações, relatórios de erro, mapas, telefone, serviços Xbox, localização, registro remoto e fax. O Windows Update permite apenas parada temporária. Serviços de proteção ficam bloqueados quando presentes. Só aparecem itens encontrados. A ausência de um item não mede a memória economizada.",
+          "feature_ids": [
+            "DW-07"
+          ]
+        },
+        {
+          "block_id": "C21-B06",
+          "text": "Em aplicativos de sistema, Finalizar interrompe os processos atuais; Desinstalar remove o pacote do usuário após confirmação. São efeitos diferentes. O catálogo pode incluir Widgets, Vincular ao Celular, Game Bar, Copilot, Cortana, Teams pessoal, Notícias, Obter Ajuda e Solitaire. Só instalados aparecem. A reinstalação, quando desejada, é feita pela Microsoft Store.",
+          "feature_ids": [
+            "DW-08"
+          ]
+        },
+        {
+          "block_id": "C21-B07",
+          "text": "Nos modais desta tela, Confirmar aplica e Cancelar abandona. Enter confirma e Escape cancela. Confira qual janela está pedindo a decisão antes de usar o teclado. Diferentemente desses controles, finalizar um processo na Lista é imediato. As entradas de inicialização ficam em Partida; esta tela não substitui aquele inventário.",
+          "feature_ids": [
+            "DW-09"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "title": "Telas Windows: grades e cenários com mais ajustes",
+      "platform": "Windows release 0.9.0 no Wine; comportamento nativo documentado",
+      "resources": [
+        "Telas Windows",
+        "Sete grades",
+        "Cenários",
+        "Slots",
+        "Snap",
+        "Título"
+      ],
+      "blocks": [
+        {
+          "block_id": "C22-B01",
+          "text": "Telas Windows desenha monitores em proporção, com resolução e indicação do principal. Atualizar relê janelas e monitores. A busca filtra título ou executável. Clique na janela da lista para selecionar e focar. Permissões diferentes podem impedir movimentação. Nesta gravação, lembre que o ambiente é Wine e não uma validação do desktop Windows nativo.",
+          "feature_ids": [
+            "SW-01",
+            "SW-02"
+          ]
+        },
+        {
+          "block_id": "C22-B02",
+          "text": "O seletor oferece Cheio, Metades, Deitadas, Terços, Quadrantes, Principal mais dois e Centro largo. Encaixar ao arrastar liga ou desliga o ajuste à zona. Distribuir coloca janelas daquele monitor nas zonas, até a quantidade disponível. Se existirem mais janelas que zonas, as excedentes não são necessariamente reposicionadas.",
+          "feature_ids": [
+            "SW-03",
+            "SW-04",
+            "SW-05"
+          ]
+        },
+        {
+          "block_id": "C22-B03",
+          "text": "Na lista, a seta numerada envia a outro monitor, o traço minimiza e o quadrado maximiza. Para cenários, dê um nome e escolha Novo vazio ou Salvar atual. Depois selecione o cenário. O sinal de mais na linha de uma janela acrescenta sua posição atual como um item desse cenário.",
+          "feature_ids": [
+            "SW-06",
+            "SW-07",
+            "SW-08"
+          ]
+        },
+        {
+          "block_id": "C22-B04",
+          "text": "Cada item permite escolher a tela, marcar abrir e informar um trecho do título para distinguir janelas do mesmo programa. O xis remove apenas aquele item do cenário. As posições e dimensões aparecem em porcentagens da área útil. Esses campos ajudam a revisar o arranjo; nem todos os números têm edição direta nesta interface.",
+          "feature_ids": [
+            "SW-09"
+          ]
+        },
+        {
+          "block_id": "C22-B05",
+          "text": "Aplicar reposiciona janelas abertas e tenta lançar as ausentes com abrir marcado, aguardando até vinte e cinco segundos. As frações acomodam mudanças de resolução; se um monitor sumir, o cenário usa o principal. Isso não restaura documentos internos dos programas. Excluir remove o cenário salvo, sem fechar as janelas que já estão abertas.",
+          "feature_ids": [
+            "SW-10",
+            "SW-11"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "title": "macOS e preferências que ficam salvas",
+      "platform": "macOS documentado; configuração comum",
+      "resources": [
+        "macOS",
+        "Configuração",
+        "Preferências",
+        "Gatekeeper",
+        "Persistência"
+      ],
+      "blocks": [
+        {
+          "block_id": "C23-B01",
+          "text": "No macOS, o núcleo de processos, categorias, origem, árvore e encerramento está disponível. Partida, Desperdício e Telas não têm backend implementado; Térmico informa que a leitura ainda não está ligada. GPU e porcentagem global de atividade de disco também têm limitações. Se o Gatekeeper bloquear a primeira abertura, consulte Privacidade e segurança nos Ajustes.",
+          "feature_ids": [
+            "SET-09",
+            "DM-01",
+            "SM-01",
+            "TH-08"
+          ]
+        },
+        {
+          "block_id": "C23-B02",
+          "text": "Ao fechar, o RamDog guarda locks, categorias manuais, intervalo, limiar e medida de memória, visão, agrupamento e estado Mini. Também guarda presets de Partida e cenários de Telas, incluindo grade e encaixe. Busca, seleção, pausa, chips temporariamente filtrados e escolha de GPU não devem ser tratados como preferências persistidas.",
+          "feature_ids": [
+            "CFG-01"
+          ]
+        },
+        {
+          "block_id": "C23-B03",
+          "text": "Não existe uma tela separada de configurações. O arquivo fica nos caminhos indicados para Windows, Linux e macOS. Com o aplicativo fechado, guarde uma cópia antes de editar ou restaurar preferências manualmente. Um arquivo inválido pode fazer a próxima abertura usar padrões. No Linux, o local respeita a configuração de diretórios XDG.",
+          "feature_ids": [
+            "CFG-02"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "title": "Diagnosticar problemas e montar sua rotina",
+      "platform": "Linux diagnóstico; rotina comum",
+      "resources": [
+        "Diagnóstico",
+        "Logs",
+        "RAM",
+        "Rotina",
+        "Fechar",
+        "Reabrir"
+      ],
+      "blocks": [
+        {
+          "block_id": "C24-B01",
+          "text": "O comando mostrado na tela faz o diagnóstico quando falta uma integração no Linux. Ele gera um relatório sem modificar o sistema. O resumo inclui processos, cobertura da leitura de memória, placas gráficas, janelas, itens de partida e sensores. Isso ajuda a diferenciar falta de permissão, falha do controlador ou integração ausente. Compare o relatório aos avisos da interface; dados ausentes não são zeros.",
+          "feature_ids": [
+            "CFG-03",
+            "CFG-06"
+          ]
+        },
+        {
+          "block_id": "C24-B02",
+          "text": "Os registros do serviço e o arquivo local de mensagens ajudam a investigar encerramentos. Os comandos e caminhos estão na tela. Há também um teste de abertura: uma instância própria percorre abas, medidas de memória e a janela pequena durante noventa segundos. Depois, fecha sem salvar essas alterações. Esse diagnóstico ajuda, mas você ainda precisa testar a ação desejada.",
+          "feature_ids": [
+            "CFG-04",
+            "CFG-05"
+          ]
+        },
+        {
+          "block_id": "C24-B03",
+          "text": "Para o dia a dia, comece pelo medidor que chamou sua atenção. Ordene a coluna, busque o aplicativo e abra os detalhes. Confira caminho, origem e consumo próprio. Proteja o que precisa continuar e salve o trabalho antes de encerrar. Leia o resultado da ação e acompanhe a nova amostra para entender o efeito.",
+          "feature_ids": [
+            "LST-04",
+            "DET-01",
+            "ACT-01",
+            "ACT-03"
+          ]
+        },
+        {
+          "block_id": "C24-B04",
+          "text": "Escolha os programas que iniciarão com a sessão. Analise a finalidade de cada serviço. Salve um cenário para organizar janelas usadas na rotina. Para somente acompanhar os números, use a janela pequena. Não é preciso alterar tudo: use os recursos necessários. Cada recurso resolve uma tarefa. Consulte os capítulos quando surgir uma necessidade e mantenha suas escolhas fáceis de restaurar.",
+          "feature_ids": [
+            "BL-03",
+            "DL-03",
+            "SL-09",
+            "MINI-01"
+          ]
+        }
+      ]
+    }
+  ]
+}

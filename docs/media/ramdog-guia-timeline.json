@@ -1,0 +1,1044 @@
+{
+  "duration": 1760.8,
+  "chapters": [
+    {
+      "id": "C01",
+      "title": "Bem-vindo: seu primeiro mapa do RamDog",
+      "start": 0.0,
+      "end": 51.28
+    },
+    {
+      "id": "C02",
+      "title": "Instalar, abrir e atualizar",
+      "start": 51.28,
+      "end": 122.6
+    },
+    {
+      "id": "C03",
+      "title": "Entender CPU, RAM, GPU e disco",
+      "start": 122.6,
+      "end": 188.12
+    },
+    {
+      "id": "C04",
+      "title": "Controlar o ritmo sem parar seus aplicativos",
+      "start": 188.12,
+      "end": 244.44
+    },
+    {
+      "id": "C05",
+      "title": "Encontrar o aplicativo certo na Lista",
+      "start": 244.44,
+      "end": 323.52
+    },
+    {
+      "id": "C06",
+      "title": "Escolher a medida de memória",
+      "start": 323.52,
+      "end": 377.56
+    },
+    {
+      "id": "C07",
+      "title": "Categorias e preferências por aplicativo",
+      "start": 377.56,
+      "end": 428.4
+    },
+    {
+      "id": "C08",
+      "title": "Ler os detalhes e descobrir a origem",
+      "start": 428.4,
+      "end": 513.48
+    },
+    {
+      "id": "C09",
+      "title": "Proteger antes de encerrar",
+      "start": 513.48,
+      "end": 572.72
+    },
+    {
+      "id": "C10",
+      "title": "Árvore, filhos e encerramento de um app inteiro",
+      "start": 572.72,
+      "end": 633.44
+    },
+    {
+      "id": "C11",
+      "title": "Acompanhar a máquina no modo Mini",
+      "start": 633.44,
+      "end": 711.24
+    },
+    {
+      "id": "C12",
+      "title": "Partida Linux: agora ou no próximo login",
+      "start": 711.24,
+      "end": 770.8
+    },
+    {
+      "id": "C13",
+      "title": "Salvar e restaurar um preset de Partida",
+      "start": 770.8,
+      "end": 825.96
+    },
+    {
+      "id": "C14",
+      "title": "Desperdício Linux: revisar serviços em segundo plano",
+      "start": 825.96,
+      "end": 889.36
+    },
+    {
+      "id": "C15",
+      "title": "Térmico: conhecer as leituras disponíveis",
+      "start": 889.36,
+      "end": 950.4
+    },
+    {
+      "id": "C16",
+      "title": "Manual, Auto e Estabilizar",
+      "start": 950.4,
+      "end": 1022.52
+    },
+    {
+      "id": "C17",
+      "title": "Telas Linux: selecionar, mover e organizar",
+      "start": 1022.52,
+      "end": 1103.0
+    },
+    {
+      "id": "C18",
+      "title": "Telas Linux: salvar uma rotina como cenário",
+      "start": 1103.0,
+      "end": 1160.96
+    },
+    {
+      "id": "C19",
+      "title": "Windows: abrir, medir e conferir confiança",
+      "start": 1160.96,
+      "end": 1242.12
+    },
+    {
+      "id": "C20",
+      "title": "Partida Windows: fontes, fases e presets",
+      "start": 1242.12,
+      "end": 1380.92
+    },
+    {
+      "id": "C21",
+      "title": "Desperdício Windows: entender cada efeito",
+      "start": 1380.92,
+      "end": 1515.48
+    },
+    {
+      "id": "C22",
+      "title": "Telas Windows: grades e cenários com mais ajustes",
+      "start": 1515.48,
+      "end": 1613.52
+    },
+    {
+      "id": "C23",
+      "title": "macOS e preferências que ficam salvas",
+      "start": 1613.52,
+      "end": 1675.88
+    },
+    {
+      "id": "C24",
+      "title": "Diagnosticar problemas e montar sua rotina",
+      "start": 1675.88,
+      "end": 1760.8
+    }
+  ],
+  "blocks": [
+    {
+      "block_id": "C01-B01",
+      "chapter": "C01",
+      "start": 2.52,
+      "end": 12.879999999999999,
+      "feature_ids": [
+        "NAV-01"
+      ]
+    },
+    {
+      "block_id": "C01-B02",
+      "chapter": "C01",
+      "start": 12.88,
+      "end": 33.04,
+      "feature_ids": [
+        "NAV-01",
+        "NAV-02"
+      ]
+    },
+    {
+      "block_id": "C01-B03",
+      "chapter": "C01",
+      "start": 33.04,
+      "end": 51.28,
+      "feature_ids": [
+        "MET-08"
+      ]
+    },
+    {
+      "block_id": "C02-B01",
+      "chapter": "C02",
+      "start": 53.8,
+      "end": 72.8,
+      "feature_ids": [
+        "SET-02",
+        "SET-04"
+      ]
+    },
+    {
+      "block_id": "C02-B02",
+      "chapter": "C02",
+      "start": 72.8,
+      "end": 85.64,
+      "feature_ids": [
+        "SET-03"
+      ]
+    },
+    {
+      "block_id": "C02-B03",
+      "chapter": "C02",
+      "start": 85.64,
+      "end": 107.03999999999999,
+      "feature_ids": [
+        "SET-07",
+        "SET-08"
+      ]
+    },
+    {
+      "block_id": "C02-B04",
+      "chapter": "C02",
+      "start": 107.04,
+      "end": 122.60000000000001,
+      "feature_ids": [
+        "SET-05",
+        "SET-10"
+      ]
+    },
+    {
+      "block_id": "C03-B01",
+      "chapter": "C03",
+      "start": 125.12,
+      "end": 137.6,
+      "feature_ids": [
+        "MET-01",
+        "MET-02"
+      ]
+    },
+    {
+      "block_id": "C03-B02",
+      "chapter": "C03",
+      "start": 137.6,
+      "end": 156.35999999999999,
+      "feature_ids": [
+        "MET-03"
+      ]
+    },
+    {
+      "block_id": "C03-B03",
+      "chapter": "C03",
+      "start": 156.36,
+      "end": 170.24,
+      "feature_ids": [
+        "MET-05",
+        "MET-06"
+      ]
+    },
+    {
+      "block_id": "C03-B04",
+      "chapter": "C03",
+      "start": 170.24,
+      "end": 188.12,
+      "feature_ids": [
+        "MET-07",
+        "MET-08"
+      ]
+    },
+    {
+      "block_id": "C04-B01",
+      "chapter": "C04",
+      "start": 190.64,
+      "end": 207.56,
+      "feature_ids": [
+        "MET-09"
+      ]
+    },
+    {
+      "block_id": "C04-B02",
+      "chapter": "C04",
+      "start": 207.56,
+      "end": 226.72,
+      "feature_ids": [
+        "MET-10",
+        "MET-11"
+      ]
+    },
+    {
+      "block_id": "C04-B03",
+      "chapter": "C04",
+      "start": 226.72,
+      "end": 244.44,
+      "feature_ids": [
+        "MET-12",
+        "MET-13"
+      ]
+    },
+    {
+      "block_id": "C05-B01",
+      "chapter": "C05",
+      "start": 246.96,
+      "end": 265.96000000000004,
+      "feature_ids": [
+        "LST-01",
+        "LST-02"
+      ]
+    },
+    {
+      "block_id": "C05-B02",
+      "chapter": "C05",
+      "start": 265.96,
+      "end": 284.0,
+      "feature_ids": [
+        "LST-03"
+      ]
+    },
+    {
+      "block_id": "C05-B03",
+      "chapter": "C05",
+      "start": 284.0,
+      "end": 303.52,
+      "feature_ids": [
+        "LST-04",
+        "LST-05"
+      ]
+    },
+    {
+      "block_id": "C05-B04",
+      "chapter": "C05",
+      "start": 303.52,
+      "end": 323.52,
+      "feature_ids": [
+        "LST-10",
+        "LST-11"
+      ]
+    },
+    {
+      "block_id": "C06-B01",
+      "chapter": "C06",
+      "start": 326.04,
+      "end": 342.16,
+      "feature_ids": [
+        "LST-06"
+      ]
+    },
+    {
+      "block_id": "C06-B02",
+      "chapter": "C06",
+      "start": 342.16,
+      "end": 359.88,
+      "feature_ids": [
+        "LST-07",
+        "LST-08"
+      ]
+    },
+    {
+      "block_id": "C06-B03",
+      "chapter": "C06",
+      "start": 359.88,
+      "end": 377.56,
+      "feature_ids": [
+        "LST-09",
+        "DET-10"
+      ]
+    },
+    {
+      "block_id": "C07-B01",
+      "chapter": "C07",
+      "start": 380.08,
+      "end": 397.4,
+      "feature_ids": [
+        "CAT-01"
+      ]
+    },
+    {
+      "block_id": "C07-B02",
+      "chapter": "C07",
+      "start": 397.4,
+      "end": 410.4,
+      "feature_ids": [
+        "CAT-02"
+      ]
+    },
+    {
+      "block_id": "C07-B03",
+      "chapter": "C07",
+      "start": 410.4,
+      "end": 428.4,
+      "feature_ids": [
+        "CAT-03",
+        "CAT-04"
+      ]
+    },
+    {
+      "block_id": "C08-B01",
+      "chapter": "C08",
+      "start": 430.92,
+      "end": 449.44,
+      "feature_ids": [
+        "DET-01",
+        "DET-04"
+      ]
+    },
+    {
+      "block_id": "C08-B02",
+      "chapter": "C08",
+      "start": 449.44,
+      "end": 466.52,
+      "feature_ids": [
+        "DET-02",
+        "DET-03"
+      ]
+    },
+    {
+      "block_id": "C08-B03",
+      "chapter": "C08",
+      "start": 466.52,
+      "end": 491.03999999999996,
+      "feature_ids": [
+        "DET-05",
+        "DET-11"
+      ]
+    },
+    {
+      "block_id": "C08-B04",
+      "chapter": "C08",
+      "start": 491.04,
+      "end": 513.48,
+      "feature_ids": [
+        "DET-06",
+        "DET-08",
+        "DET-12"
+      ]
+    },
+    {
+      "block_id": "C09-B01",
+      "chapter": "C09",
+      "start": 516.0,
+      "end": 537.28,
+      "feature_ids": [
+        "ACT-01",
+        "ACT-02"
+      ]
+    },
+    {
+      "block_id": "C09-B02",
+      "chapter": "C09",
+      "start": 537.28,
+      "end": 555.56,
+      "feature_ids": [
+        "ACT-03"
+      ]
+    },
+    {
+      "block_id": "C09-B03",
+      "chapter": "C09",
+      "start": 555.56,
+      "end": 572.7199999999999,
+      "feature_ids": [
+        "ACT-06"
+      ]
+    },
+    {
+      "block_id": "C10-B01",
+      "chapter": "C10",
+      "start": 575.24,
+      "end": 595.24,
+      "feature_ids": [
+        "TRE-01",
+        "DET-10"
+      ]
+    },
+    {
+      "block_id": "C10-B02",
+      "chapter": "C10",
+      "start": 595.24,
+      "end": 613.44,
+      "feature_ids": [
+        "ACT-04"
+      ]
+    },
+    {
+      "block_id": "C10-B03",
+      "chapter": "C10",
+      "start": 613.44,
+      "end": 633.44,
+      "feature_ids": [
+        "ACT-05",
+        "ACT-01"
+      ]
+    },
+    {
+      "block_id": "C11-B01",
+      "chapter": "C11",
+      "start": 635.96,
+      "end": 654.1600000000001,
+      "feature_ids": [
+        "MINI-01",
+        "MINI-02",
+        "MINI-03"
+      ]
+    },
+    {
+      "block_id": "C11-B02",
+      "chapter": "C11",
+      "start": 654.16,
+      "end": 674.16,
+      "feature_ids": [
+        "MINI-04",
+        "MINI-05"
+      ]
+    },
+    {
+      "block_id": "C11-B03",
+      "chapter": "C11",
+      "start": 674.16,
+      "end": 694.48,
+      "feature_ids": [
+        "MINI-06",
+        "MINI-07",
+        "MINI-08"
+      ]
+    },
+    {
+      "block_id": "C11-B04",
+      "chapter": "C11",
+      "start": 694.48,
+      "end": 711.24,
+      "feature_ids": [
+        "MINI-09"
+      ]
+    },
+    {
+      "block_id": "C12-B01",
+      "chapter": "C12",
+      "start": 713.76,
+      "end": 731.92,
+      "feature_ids": [
+        "BL-01",
+        "BL-02"
+      ]
+    },
+    {
+      "block_id": "C12-B02",
+      "chapter": "C12",
+      "start": 731.92,
+      "end": 752.92,
+      "feature_ids": [
+        "BL-03"
+      ]
+    },
+    {
+      "block_id": "C12-B03",
+      "chapter": "C12",
+      "start": 752.92,
+      "end": 770.8,
+      "feature_ids": [
+        "BL-04"
+      ]
+    },
+    {
+      "block_id": "C13-B01",
+      "chapter": "C13",
+      "start": 773.32,
+      "end": 789.24,
+      "feature_ids": [
+        "BL-05"
+      ]
+    },
+    {
+      "block_id": "C13-B02",
+      "chapter": "C13",
+      "start": 789.24,
+      "end": 813.24,
+      "feature_ids": [
+        "BL-06",
+        "BL-07"
+      ]
+    },
+    {
+      "block_id": "C13-B03",
+      "chapter": "C13",
+      "start": 813.24,
+      "end": 825.96,
+      "feature_ids": [
+        "BL-05",
+        "BL-07"
+      ]
+    },
+    {
+      "block_id": "C14-B01",
+      "chapter": "C14",
+      "start": 828.48,
+      "end": 851.48,
+      "feature_ids": [
+        "DL-01"
+      ]
+    },
+    {
+      "block_id": "C14-B02",
+      "chapter": "C14",
+      "start": 851.48,
+      "end": 870.0,
+      "feature_ids": [
+        "DL-02"
+      ]
+    },
+    {
+      "block_id": "C14-B03",
+      "chapter": "C14",
+      "start": 870.0,
+      "end": 889.36,
+      "feature_ids": [
+        "DL-03"
+      ]
+    },
+    {
+      "block_id": "C15-B01",
+      "chapter": "C15",
+      "start": 891.88,
+      "end": 910.4399999999999,
+      "feature_ids": [
+        "TH-01",
+        "CFG-06"
+      ]
+    },
+    {
+      "block_id": "C15-B02",
+      "chapter": "C15",
+      "start": 910.44,
+      "end": 931.8000000000001,
+      "feature_ids": [
+        "TH-03"
+      ]
+    },
+    {
+      "block_id": "C15-B03",
+      "chapter": "C15",
+      "start": 931.8,
+      "end": 950.4,
+      "feature_ids": [
+        "TH-01",
+        "TH-03"
+      ]
+    },
+    {
+      "block_id": "C16-B01",
+      "chapter": "C16",
+      "start": 952.92,
+      "end": 968.8399999999999,
+      "feature_ids": [
+        "TH-04"
+      ]
+    },
+    {
+      "block_id": "C16-B02",
+      "chapter": "C16",
+      "start": 968.84,
+      "end": 986.48,
+      "feature_ids": [
+        "TH-05"
+      ]
+    },
+    {
+      "block_id": "C16-B03",
+      "chapter": "C16",
+      "start": 986.48,
+      "end": 1003.76,
+      "feature_ids": [
+        "TH-06"
+      ]
+    },
+    {
+      "block_id": "C16-B04",
+      "chapter": "C16",
+      "start": 1003.76,
+      "end": 1022.52,
+      "feature_ids": [
+        "TH-07"
+      ]
+    },
+    {
+      "block_id": "C17-B01",
+      "chapter": "C17",
+      "start": 1025.04,
+      "end": 1043.3999999999999,
+      "feature_ids": [
+        "SL-01"
+      ]
+    },
+    {
+      "block_id": "C17-B02",
+      "chapter": "C17",
+      "start": 1043.4,
+      "end": 1062.52,
+      "feature_ids": [
+        "SL-02",
+        "SL-03",
+        "SL-04"
+      ]
+    },
+    {
+      "block_id": "C17-B03",
+      "chapter": "C17",
+      "start": 1062.52,
+      "end": 1083.6399999999999,
+      "feature_ids": [
+        "SL-05",
+        "SL-06"
+      ]
+    },
+    {
+      "block_id": "C17-B04",
+      "chapter": "C17",
+      "start": 1083.64,
+      "end": 1103.0,
+      "feature_ids": [
+        "SL-07",
+        "SL-08"
+      ]
+    },
+    {
+      "block_id": "C18-B01",
+      "chapter": "C18",
+      "start": 1105.52,
+      "end": 1121.36,
+      "feature_ids": [
+        "SL-09"
+      ]
+    },
+    {
+      "block_id": "C18-B02",
+      "chapter": "C18",
+      "start": 1121.36,
+      "end": 1141.1599999999999,
+      "feature_ids": [
+        "SL-10",
+        "SL-11"
+      ]
+    },
+    {
+      "block_id": "C18-B03",
+      "chapter": "C18",
+      "start": 1141.16,
+      "end": 1160.96,
+      "feature_ids": [
+        "SL-09",
+        "SL-10",
+        "SL-11"
+      ]
+    },
+    {
+      "block_id": "C19-B01",
+      "chapter": "C19",
+      "start": 1163.48,
+      "end": 1182.68,
+      "feature_ids": [
+        "SET-01",
+        "SET-06"
+      ]
+    },
+    {
+      "block_id": "C19-B02",
+      "chapter": "C19",
+      "start": 1182.68,
+      "end": 1202.4,
+      "feature_ids": [
+        "MET-04",
+        "CAT-05",
+        "LST-08",
+        "LST-09"
+      ]
+    },
+    {
+      "block_id": "C19-B03",
+      "chapter": "C19",
+      "start": 1202.4,
+      "end": 1222.0400000000002,
+      "feature_ids": [
+        "DET-07",
+        "DET-09"
+      ]
+    },
+    {
+      "block_id": "C19-B04",
+      "chapter": "C19",
+      "start": 1222.04,
+      "end": 1242.12,
+      "feature_ids": [
+        "TH-02",
+        "SET-04",
+        "SET-10"
+      ]
+    },
+    {
+      "block_id": "C20-B01",
+      "chapter": "C20",
+      "start": 1244.64,
+      "end": 1263.3200000000002,
+      "feature_ids": [
+        "BW-01",
+        "BW-12"
+      ]
+    },
+    {
+      "block_id": "C20-B02",
+      "chapter": "C20",
+      "start": 1263.32,
+      "end": 1279.84,
+      "feature_ids": [
+        "BW-02",
+        "BW-03",
+        "BW-04"
+      ]
+    },
+    {
+      "block_id": "C20-B03",
+      "chapter": "C20",
+      "start": 1279.84,
+      "end": 1297.84,
+      "feature_ids": [
+        "BW-05",
+        "BW-06"
+      ]
+    },
+    {
+      "block_id": "C20-B04",
+      "chapter": "C20",
+      "start": 1297.84,
+      "end": 1316.04,
+      "feature_ids": [
+        "BW-07",
+        "BW-08",
+        "BW-09"
+      ]
+    },
+    {
+      "block_id": "C20-B05",
+      "chapter": "C20",
+      "start": 1316.04,
+      "end": 1339.04,
+      "feature_ids": [
+        "BW-10",
+        "BW-11"
+      ]
+    },
+    {
+      "block_id": "C20-B06",
+      "chapter": "C20",
+      "start": 1339.04,
+      "end": 1363.04,
+      "feature_ids": [
+        "BW-13"
+      ]
+    },
+    {
+      "block_id": "C20-B07",
+      "chapter": "C20",
+      "start": 1363.04,
+      "end": 1380.92,
+      "feature_ids": [
+        "BW-14",
+        "BW-15"
+      ]
+    },
+    {
+      "block_id": "C21-B01",
+      "chapter": "C21",
+      "start": 1383.44,
+      "end": 1398.2,
+      "feature_ids": [
+        "DW-01",
+        "DW-02"
+      ]
+    },
+    {
+      "block_id": "C21-B02",
+      "chapter": "C21",
+      "start": 1398.2,
+      "end": 1417.88,
+      "feature_ids": [
+        "DW-03"
+      ]
+    },
+    {
+      "block_id": "C21-B03",
+      "chapter": "C21",
+      "start": 1417.88,
+      "end": 1435.5600000000002,
+      "feature_ids": [
+        "DW-04",
+        "DW-05"
+      ]
+    },
+    {
+      "block_id": "C21-B04",
+      "chapter": "C21",
+      "start": 1435.56,
+      "end": 1454.3999999999999,
+      "feature_ids": [
+        "DW-06"
+      ]
+    },
+    {
+      "block_id": "C21-B05",
+      "chapter": "C21",
+      "start": 1454.4,
+      "end": 1476.24,
+      "feature_ids": [
+        "DW-07"
+      ]
+    },
+    {
+      "block_id": "C21-B06",
+      "chapter": "C21",
+      "start": 1476.24,
+      "end": 1496.88,
+      "feature_ids": [
+        "DW-08"
+      ]
+    },
+    {
+      "block_id": "C21-B07",
+      "chapter": "C21",
+      "start": 1496.88,
+      "end": 1515.48,
+      "feature_ids": [
+        "DW-09"
+      ]
+    },
+    {
+      "block_id": "C22-B01",
+      "chapter": "C22",
+      "start": 1518.0,
+      "end": 1537.8,
+      "feature_ids": [
+        "SW-01",
+        "SW-02"
+      ]
+    },
+    {
+      "block_id": "C22-B02",
+      "chapter": "C22",
+      "start": 1537.8,
+      "end": 1556.8,
+      "feature_ids": [
+        "SW-03",
+        "SW-04",
+        "SW-05"
+      ]
+    },
+    {
+      "block_id": "C22-B03",
+      "chapter": "C22",
+      "start": 1556.8,
+      "end": 1572.32,
+      "feature_ids": [
+        "SW-06",
+        "SW-07",
+        "SW-08"
+      ]
+    },
+    {
+      "block_id": "C22-B04",
+      "chapter": "C22",
+      "start": 1572.32,
+      "end": 1594.32,
+      "feature_ids": [
+        "SW-09"
+      ]
+    },
+    {
+      "block_id": "C22-B05",
+      "chapter": "C22",
+      "start": 1594.32,
+      "end": 1613.52,
+      "feature_ids": [
+        "SW-10",
+        "SW-11"
+      ]
+    },
+    {
+      "block_id": "C23-B01",
+      "chapter": "C23",
+      "start": 1616.04,
+      "end": 1636.6,
+      "feature_ids": [
+        "SET-09",
+        "DM-01",
+        "SM-01",
+        "TH-08"
+      ]
+    },
+    {
+      "block_id": "C23-B02",
+      "chapter": "C23",
+      "start": 1636.6,
+      "end": 1655.36,
+      "feature_ids": [
+        "CFG-01"
+      ]
+    },
+    {
+      "block_id": "C23-B03",
+      "chapter": "C23",
+      "start": 1655.36,
+      "end": 1675.8799999999999,
+      "feature_ids": [
+        "CFG-02"
+      ]
+    },
+    {
+      "block_id": "C24-B01",
+      "chapter": "C24",
+      "start": 1678.4,
+      "end": 1701.0800000000002,
+      "feature_ids": [
+        "CFG-03",
+        "CFG-06"
+      ]
+    },
+    {
+      "block_id": "C24-B02",
+      "chapter": "C24",
+      "start": 1701.08,
+      "end": 1721.8,
+      "feature_ids": [
+        "CFG-04",
+        "CFG-05"
+      ]
+    },
+    {
+      "block_id": "C24-B03",
+      "chapter": "C24",
+      "start": 1721.8,
+      "end": 1738.96,
+      "feature_ids": [
+        "LST-04",
+        "DET-01",
+        "ACT-01",
+        "ACT-03"
+      ]
+    },
+    {
+      "block_id": "C24-B04",
+      "chapter": "C24",
+      "start": 1738.96,
+      "end": 1760.8,
+      "feature_ids": [
+        "BL-03",
+        "DL-03",
+        "SL-09",
+        "MINI-01"
+      ]
+    }
+  ]
+}

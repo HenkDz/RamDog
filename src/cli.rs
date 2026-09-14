@@ -6,11 +6,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::{json, Map, Value};
 
 use crate::categories::{self, Category};
-use crate::config::Config;
+use crate::config::{Config, MemMetric};
 use crate::hwtemp::HwTemp;
 use crate::knowledge::{self, Risk};
 use crate::metrics::{GpuInfo, SysSample};
-use crate::procs::{self, KernelMem, MemStatus, ProcInfo};
+use crate::procs::{self, KillOutcome, KernelMem, MemStatus, ProcInfo};
 use crate::sampler::{self, SamplerHandle, Snapshot};
 use crate::signature::{self, SigInfo, Trust};
 
@@ -280,13 +280,23 @@ fn command_sessions(_args: &[String]) -> Result<Option<Value>, String> {
 }
 
 fn command_startup() -> Result<Option<Value>, String> {
+    #[cfg(not(windows))]
+    return Ok(Some(json!({ "supported": false, "reason": "Startup inventory is Windows-only" })));
+    #[cfg(windows)]
+    {
     let mut startup = crate::boot::Boot::new();
     Ok(Some(startup.snapshot_json()))
+    }
 }
 
 fn command_drains() -> Result<Option<Value>, String> {
+    #[cfg(not(windows))]
+    return Ok(Some(json!({ "supported": false, "reason": "Defender, services, and Appx are Windows-only" })));
+    #[cfg(windows)]
+    {
     let mut drains = crate::drains::Drains::new();
     Ok(Some(drains.snapshot_json()))
+    }
 }
 
 fn command_terminate(args: &[String]) -> Result<Option<Value>, String> {
@@ -335,7 +345,7 @@ fn has_flag(args: &[String], flag: &str) -> bool {
 fn snapshot_value(snapshot: &Snapshot, config: &Config, full_command: bool) -> Value {
     let overrides: HashMap<String, Category> = config.overrides.clone().into_iter().collect();
     let categories = categories::classify(&snapshot.procs, &overrides);
-    let (subtrees, counts) = procs::subtree_totals(&snapshot.procs, config.mem_metric);
+    let (subtrees, counts) = subtree_totals(&snapshot.procs, config.mem_metric);
     let mut cat_counts: HashMap<Category, usize> = HashMap::new();
     let processes: Vec<Value> = snapshot
         .procs
@@ -375,6 +385,55 @@ fn snapshot_value(snapshot: &Snapshot, config: &Config, full_command: bool) -> V
         "ai_sessions": ai_sessions(&snapshot.procs, &categories),
         "processes": processes,
     })
+}
+
+fn subtree_totals(procs: &[ProcInfo], metric: MemMetric) -> (HashMap<u32, u64>, HashMap<u32, usize>) {
+    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+    let by_pid: HashMap<u32, &ProcInfo> = procs.iter().map(|p| (p.pid, p)).collect();
+    for process in procs {
+        children.entry(process.ppid).or_default().push(process.pid);
+    }
+
+    fn bytes(process: &ProcInfo, metric: MemMetric) -> u64 {
+        match metric {
+            #[cfg(target_os = "linux")]
+            MemMetric::Proportional => process.linux_memory.map(|m| m.1).unwrap_or(0),
+            MemMetric::WorkingSet => process.working_set,
+            MemMetric::Private => process.private_ws,
+            MemMetric::Commit => process.commit,
+        }
+    }
+
+    fn visit(
+        pid: u32,
+        by_pid: &HashMap<u32, &ProcInfo>,
+        children: &HashMap<u32, Vec<u32>>,
+        metric: MemMetric,
+        seen: &mut HashSet<u32>,
+    ) -> (u64, usize) {
+        if !seen.insert(pid) {
+            return (0, 0);
+        }
+        let Some(process) = by_pid.get(&pid) else { return (0, 0) };
+        let mut total = bytes(process, metric);
+        let mut count = 1;
+        for child in children.get(&pid).into_iter().flatten() {
+            let (child_total, child_count) = visit(*child, by_pid, children, metric, seen);
+            total = total.saturating_add(child_total);
+            count += child_count;
+        }
+        (total, count)
+    }
+
+    let mut totals = HashMap::new();
+    let mut counts = HashMap::new();
+    for process in procs {
+        let mut seen = HashSet::new();
+        let (total, count) = visit(process.pid, &by_pid, &children, metric, &mut seen);
+        totals.insert(process.pid, total);
+        counts.insert(process.pid, count);
+    }
+    (totals, counts)
 }
 
 fn process_value(
@@ -426,7 +485,7 @@ fn inspect_value(
 ) -> Value {
     let overrides: HashMap<String, Category> = config.overrides.clone().into_iter().collect();
     let categories = categories::classify(&snapshot.procs, &overrides);
-    let (subtrees, counts) = procs::subtree_totals(&snapshot.procs, config.mem_metric);
+    let (subtrees, counts) = subtree_totals(&snapshot.procs, config.mem_metric);
     let category = categories
         .get(&process.pid)
         .copied()
@@ -464,7 +523,7 @@ fn tree_value(
     let tree = process_tree(&snapshot.procs, root_pid)?;
     let overrides: HashMap<String, Category> = config.overrides.clone().into_iter().collect();
     let categories = categories::classify(&snapshot.procs, &overrides);
-    let (subtrees, counts) = procs::subtree_totals(&snapshot.procs, config.mem_metric);
+    let (subtrees, counts) = subtree_totals(&snapshot.procs, config.mem_metric);
     let processes = tree
         .iter()
         .map(|(p, depth)| {
@@ -672,8 +731,18 @@ fn terminate_snapshot(
     let mut errors = Vec::new();
     for (process, _) in targets {
         match procs::kill(process.pid) {
-            Ok(()) => killed.push(process.pid),
-            Err(error) => {
+            KillOutcome::Signaled | KillOutcome::AlreadyGone => killed.push(process.pid),
+            KillOutcome::Denied => errors.push(json!({
+                "pid": process.pid,
+                "name": process.name,
+                "error": "access denied"
+            })),
+            KillOutcome::Invalid => errors.push(json!({
+                "pid": process.pid,
+                "name": process.name,
+                "error": "invalid process"
+            })),
+            KillOutcome::Failed(error) => {
                 errors.push(json!({ "pid": process.pid, "name": process.name, "error": error }))
             }
         }
@@ -690,6 +759,10 @@ fn is_fatal(process: &ProcInfo) -> bool {
 
 fn signature_value(info: &SigInfo) -> Value {
     let trust = match &info.trust {
+        #[cfg(target_os = "linux")]
+        Trust::Package { verified, .. } => {
+            if *verified { "package" } else { "package-unverified" }
+        }
         Trust::Valid => "valid",
         Trust::Unsigned => "unsigned",
         Trust::Invalid(_) => "invalid",

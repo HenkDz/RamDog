@@ -1,0 +1,2209 @@
+WEBVTT
+
+1
+00:00:02.770 --> 00:00:06.605
+Bem-vindo ao RamDog. Vamos instalar, entender o consumo, proteger processos e
+
+2
+00:00:06.605 --> 00:00:08.050
+organizar serviços e janelas.
+
+3
+00:00:08.290 --> 00:00:11.710
+Siga na ordem ou volte ao capítulo de um recurso quando precisar.
+
+4
+00:00:13.130 --> 00:00:16.790
+Lista, Árvore e Categorias são três maneiras de olhar os mesmos processos.
+
+5
+00:00:17.230 --> 00:00:19.890
+Partida, Desperdício, Térmico e Telas abrem assuntos próprios.
+
+6
+00:00:20.490 --> 00:00:23.739
+Clique novamente no botão do recurso ativo para voltar à última visão de
+
+7
+00:00:23.739 --> 00:00:24.190
+processos.
+
+8
+00:00:24.670 --> 00:00:27.230
+Os nomes ajudam você a se localizar sem decorar ícones.
+
+9
+00:00:33.290 --> 00:00:36.470
+A parte principal foi gravada no Linux, numa versão de desenvolvimento.
+
+10
+00:00:37.030 --> 00:00:40.330
+Depois veremos a interface da release Windows zero ponto nove ponto zero no
+
+11
+00:00:40.330 --> 00:00:40.550
+Wine.
+
+12
+00:00:41.470 --> 00:00:45.090
+Ali, o funcionamento da telemetria no Windows nativo não foi validado.
+
+13
+00:00:45.090 --> 00:00:49.325
+Quando um recurso depender de outro sistema ou equipamento, essa diferença
+
+14
+00:00:49.325 --> 00:00:50.470
+ficará identificada.
+
+15
+00:00:54.050 --> 00:00:57.490
+No Linux ou no macOS, copie o comando de instalação mostrado na tela.
+
+16
+00:00:57.970 --> 00:01:01.272
+Ele escolhe o pacote da sua arquitetura, verifica o arquivo baixado e instala
+
+17
+00:01:01.272 --> 00:01:01.830
+o aplicativo.
+
+18
+00:01:02.390 --> 00:01:05.265
+Você também pode baixar o pacote correspondente na página de versões
+
+19
+00:01:05.265 --> 00:01:05.730
+publicadas.
+
+20
+00:01:06.410 --> 00:01:10.230
+No Linux, mantenha o executável e seu arquivo de abertura na mesma pasta.
+
+21
+00:01:13.050 --> 00:01:16.732
+As opções na tela permitem mudar o destino, fixar uma versão existente ou
+
+22
+00:01:16.732 --> 00:01:17.690
+instalar sem abrir.
+
+23
+00:01:18.390 --> 00:01:20.170
+O padrão acompanha a release mais recente.
+
+24
+00:01:20.650 --> 00:01:23.998
+A versão de desenvolvimento desta gravação não significa que ela já esteja
+
+25
+00:01:23.998 --> 00:01:24.450
+publicada.
+
+26
+00:01:25.890 --> 00:01:29.290
+No Linux, use o comando de abertura mostrado na tela.
+
+27
+00:01:29.290 --> 00:01:31.790
+Quando o gerenciador de serviços do usuário estiver disponível,
+
+28
+00:01:31.790 --> 00:01:35.342
+ele mantém o aplicativo independente do terminal e tenta focar a janela já
+
+29
+00:01:35.342 --> 00:01:36.590
+aberta na segunda chamada.
+
+30
+00:01:36.590 --> 00:01:39.090
+Você também pode abrir o executável diretamente.
+
+31
+00:01:39.090 --> 00:01:40.790
+É preciso uma sessão gráfica.
+
+32
+00:01:40.790 --> 00:01:45.532
+A conexão remota por terminal, indicada na tela, não abre a janela sem acesso
+
+33
+00:01:45.532 --> 00:01:46.210
+ao display.
+
+34
+00:01:47.290 --> 00:01:51.044
+Para atualizar, feche o RamDog, execute o instalador ou substitua o pacote e
+
+35
+00:01:51.044 --> 00:01:51.390
+reabra.
+
+36
+00:01:51.930 --> 00:01:55.150
+As preferências ficam separadas. Não há botão de atualização na interface.
+
+37
+00:01:55.850 --> 00:01:57.650
+A documentação também explica como compilar;
+
+38
+00:01:58.570 --> 00:02:01.370
+nessa alternativa, você precisa de Rust e das dependências nativas.
+
+39
+00:02:05.370 --> 00:02:07.610
+CPU mostra a ocupação do conjunto de núcleos.
+
+40
+00:02:07.610 --> 00:02:09.510
+RAM mostra uso e capacidade total.
+
+41
+00:02:09.510 --> 00:02:12.170
+Temperaturas dependem de leitura disponível.
+
+42
+00:02:12.170 --> 00:02:14.810
+Passe o mouse nas barras para entender os detalhes
+
+43
+00:02:14.810 --> 00:02:16.800
+antes de procurar um responsável na lista.
+
+44
+00:02:17.850 --> 00:02:21.730
+No Linux, a memória global considera o total menos a memória disponível.
+
+45
+00:02:22.350 --> 00:02:25.669
+No detalhe aparecem as somas de memória proporcional e privada dos processos
+
+46
+00:02:25.669 --> 00:02:26.630
+que puderam ser lidos.
+
+47
+00:02:27.570 --> 00:02:29.850
+A fração de processos com leitura detalhada importa:
+
+48
+00:02:30.310 --> 00:02:32.630
+uma soma parcial não representa todos os processos.
+
+49
+00:02:32.810 --> 00:02:35.550
+Compromisso global também pode aparecer nesse detalhe.
+
+50
+00:02:36.610 --> 00:02:40.017
+GPU mostra os dados fornecidos pelo driver: carga, memória de vídeo e
+
+51
+00:02:40.017 --> 00:02:40.610
+temperatura.
+
+52
+00:02:41.150 --> 00:02:42.630
+Escolha outra placa pelo seletor.
+
+53
+00:02:43.050 --> 00:02:45.570
+Passe o mouse para conferir potência e ventoinha disponíveis.
+
+54
+00:02:46.230 --> 00:02:48.910
+Leitura global disponível não garante consumo por processo.
+
+55
+00:02:50.490 --> 00:02:53.370
+Disco mostra atividade e transferência, não espaço livre.
+
+56
+00:02:53.850 --> 00:02:56.875
+Na tabela, o valor representa bytes lidos e escritos por segundo pelo
+
+57
+00:02:56.875 --> 00:02:57.270
+processo.
+
+58
+00:02:57.790 --> 00:03:00.370
+Um traço significa informação indisponível, nunca zero.
+
+59
+00:03:00.730 --> 00:03:03.850
+Isso pode acontecer por permissão, driver ou limite do sistema.
+
+60
+00:03:04.350 --> 00:03:06.930
+Os avisos da própria tela indicam o contexto disponível.
+
+61
+00:03:10.890 --> 00:03:14.424
+O rodapé informa quantos processos existem, quantos estão exibidos e quanto
+
+62
+00:03:14.424 --> 00:03:15.790
+tempo a última amostra levou.
+
+63
+00:03:16.670 --> 00:03:19.710
+O contador de protegidos representa nomes que você travou manualmente.
+
+64
+00:03:20.670 --> 00:03:22.530
+Passe o mouse sobre ele para consultar a lista.
+
+65
+00:03:23.670 --> 00:03:26.730
+Processos críticos também têm proteção automática, além desses nomes.
+
+66
+00:03:27.810 --> 00:03:31.653
+Clique em pausar para congelar a leitura atual. Os aplicativos continuam
+
+67
+00:03:31.653 --> 00:03:35.389
+funcionando. Retomar devolve a atualização. No intervalo, escolha meio
+
+68
+00:03:35.389 --> 00:03:39.339
+segundo, um, dois ou cinco segundos. Essa preferência fica salva. Partida,
+
+69
+00:03:39.339 --> 00:03:43.128
+Telas e outros recursos têm consultas próprias; pausar os processos não
+
+70
+00:03:43.128 --> 00:03:45.530
+congela obrigatoriamente todos esses painéis.
+
+71
+00:03:46.970 --> 00:03:50.710
+No modo completo, F cinco força uma leitura, inclusive durante a pausa.
+
+72
+00:03:50.710 --> 00:03:54.010
+Para reler um painel específico, use também seu botão Atualizar.
+
+73
+00:03:54.010 --> 00:03:57.729
+Ao deixar o mouse sobre a tabela, a ordem das linhas fica congelada para
+
+74
+00:03:57.729 --> 00:03:58.710
+facilitar o clique.
+
+75
+00:03:58.710 --> 00:04:00.710
+Os valores continuam mudando.
+
+76
+00:04:00.710 --> 00:04:03.640
+Retire o ponteiro para acompanhar a ordenação novamente.
+
+77
+00:04:07.210 --> 00:04:11.250
+Na Lista, desligue Agrupar por app para enxergar cada processo pelo seu PID.
+
+78
+00:04:11.250 --> 00:04:15.289
+Ligue novamente para reunir instâncias do mesmo aplicativo. O cabeçalho soma
+
+79
+00:04:15.289 --> 00:04:19.010
+os recursos dos membros e mostra a quantidade. O agrupamento reconhece
+
+80
+00:04:19.010 --> 00:04:22.943
+famílias conhecidas e caminhos de executáveis; não junta qualquer programa
+
+81
+00:04:22.943 --> 00:04:24.750
+apenas porque o nome parece igual.
+
+82
+00:04:26.770 --> 00:04:28.670
+Abra a seta de um grupo para ver seus processos.
+
+83
+00:04:29.050 --> 00:04:30.750
+Expandir tudo abre os grupos disponíveis;
+
+84
+00:04:31.370 --> 00:04:32.830
+Recolher deixa a visão compacta.
+
+85
+00:04:33.470 --> 00:04:36.330
+A idade do cabeçalho acompanha o processo mais antigo daquele grupo.
+
+86
+00:04:37.150 --> 00:04:39.805
+Ao fazer uma busca, as correspondências podem aparecer abertas
+
+87
+00:04:39.805 --> 00:04:40.490
+automaticamente,
+
+88
+00:04:40.970 --> 00:04:42.770
+mesmo que o grupo estivesse recolhido antes.
+
+89
+00:04:44.250 --> 00:04:47.523
+A busca encontra trechos do nome, caminho, comando e identificação do
+
+90
+00:04:47.523 --> 00:04:47.950
+lançador.
+
+91
+00:04:48.570 --> 00:04:51.050
+Para procurar um processo pelo número, digite o identificador completo.
+
+92
+00:04:51.550 --> 00:04:55.389
+O botão de xis apaga a busca. Em Ocultar abaixo de, arraste ou digite o limite
+
+93
+00:04:55.389 --> 00:04:55.930
+de memória.
+
+94
+00:04:56.890 --> 00:04:58.250
+Com limite zero, todos aparecem.
+
+95
+00:04:58.870 --> 00:05:01.950
+O filtro acompanha a medida de memória selecionada no controle ao lado.
+
+96
+00:05:03.770 --> 00:05:06.676
+Clique no cabeçalho de uma coluna para ordenar e clique outra vez para
+
+97
+00:05:06.676 --> 00:05:07.050
+inverter.
+
+98
+00:05:07.190 --> 00:05:11.492
+Isso funciona em nome, memória, CPU, GPU, disco, categoria, PID, idade e
+
+99
+00:05:11.492 --> 00:05:11.910
+origem.
+
+100
+00:05:12.450 --> 00:05:14.150
+Arraste as divisórias para ajustar larguras.
+
+101
+00:05:14.990 --> 00:05:16.690
+Passe o mouse no texto cortado para ler mais.
+
+102
+00:05:17.310 --> 00:05:19.030
+Comando e Ações não são cabeçalhos de ordenação.
+
+103
+00:05:26.290 --> 00:05:29.530
+O seletor coluna RAM mostra muda o significado da coluna.
+
+104
+00:05:29.530 --> 00:05:32.960
+Residente, ou RSS no Linux, inclui a memória física e as páginas
+
+105
+00:05:32.960 --> 00:05:34.890
+compartilhadas usadas pelo processo.
+
+106
+00:05:34.890 --> 00:05:38.290
+Por isso, somar todas as linhas pode contar uma mesma página mais de uma vez.
+
+107
+00:05:38.290 --> 00:05:41.350
+Essa soma pode ultrapassar o total físico em uso.
+
+108
+00:05:42.410 --> 00:05:46.264
+A memória proporcional, PSS, divide as páginas compartilhadas entre quem as
+
+109
+00:05:46.264 --> 00:05:46.470
+usa.
+
+110
+00:05:46.950 --> 00:05:49.530
+Privado mostra memória exclusiva quando a leitura está disponível.
+
+111
+00:05:50.090 --> 00:05:54.116
+No Linux, traços indicam dados ausentes, e o sinal de maior ou igual marca
+
+112
+00:05:54.116 --> 00:05:55.150
+agregados parciais.
+
+113
+00:05:55.650 --> 00:05:59.070
+Confira a cobertura de leitura no rodapé antes de comparar os totais.
+
+114
+00:06:00.130 --> 00:06:03.745
+Virtual representa espaço de endereçamento no Linux e não é uma medida de RAM
+
+115
+00:06:03.745 --> 00:06:04.590
+realmente ocupada.
+
+116
+00:06:05.210 --> 00:06:07.150
+No Windows, Commit tem outro significado:
+
+117
+00:06:07.530 --> 00:06:10.410
+memória confirmada, esteja na RAM ou no arquivo de paginação.
+
+118
+00:06:11.130 --> 00:06:13.110
+Na Árvore, a coluna soma os descendentes.
+
+119
+00:06:13.470 --> 00:06:16.750
+O painel de detalhes separa o consumo próprio do consumo com os filhos.
+
+120
+00:06:20.330 --> 00:06:23.633
+Os chips separam Inteligência Artificial e Agentes, Desenvolvimento,
+
+121
+00:06:23.633 --> 00:06:25.770
+Navegador, Jogos, Pessoal, Sistema e Outros.
+
+122
+00:06:25.770 --> 00:06:27.670
+Um clique alterna uma categoria.
+
+123
+00:06:27.670 --> 00:06:31.510
+Dois cliques isolam só aquela. Use todas para restaurar o conjunto.
+
+124
+00:06:31.510 --> 00:06:35.865
+O número do chip resume a memória da categoria; o detalhe mostra a quantidade
+
+125
+00:06:35.865 --> 00:06:36.600
+de processos.
+
+126
+00:06:37.650 --> 00:06:41.210
+Na visão Categorias, clique nas faixas para recolher ou expandir os grupos.
+
+127
+00:06:41.830 --> 00:06:44.525
+Assim você compara o consumo entre atividades, como navegação e
+
+128
+00:06:44.525 --> 00:06:45.210
+desenvolvimento.
+
+129
+00:06:45.910 --> 00:06:48.290
+Os totais dos chips não se limitam ao texto da busca.
+
+130
+00:06:50.650 --> 00:06:54.008
+Se uma classificação automática não combina com sua rotina, use o botão
+
+131
+00:06:54.008 --> 00:06:55.710
+direito, Categoria, e escolha outra.
+
+132
+00:06:56.250 --> 00:06:58.430
+O combo do painel inferior faz a mesma alteração.
+
+133
+00:06:58.990 --> 00:07:02.552
+A escolha vale para o nome do executável, incluindo outras instâncias, e fica
+
+134
+00:07:02.552 --> 00:07:02.830
+salva.
+
+135
+00:07:03.350 --> 00:07:06.890
+Para desfazer, escolha Regra automática ou clique em auto nos detalhes.
+
+136
+00:07:11.170 --> 00:07:14.869
+Clique numa linha para abrir a ficha. Arraste a borda do painel inferior para
+
+137
+00:07:14.869 --> 00:07:16.550
+dar mais espaço e role os detalhes.
+
+138
+00:07:17.130 --> 00:07:20.539
+Você encontra executável e comando completos. Sem acesso significa que a
+
+139
+00:07:20.539 --> 00:07:21.770
+leitura não foi permitida.
+
+140
+00:07:22.290 --> 00:07:25.975
+Escape, fora de um campo de texto, limpa a seleção. Sem seleção, o painel
+
+141
+00:07:25.975 --> 00:07:27.590
+destaca os maiores consumidores.
+
+142
+00:07:29.690 --> 00:07:33.637
+Origem mostra a relação com processos ancestrais. Clique num nome da cadeia ou
+
+143
+00:07:33.637 --> 00:07:35.610
+use Ir para o pai no menu para navegar.
+
+144
+00:07:36.110 --> 00:07:39.619
+Lançado por, em roxo, acrescenta agente, sessão, host ou projeto quando o
+
+145
+00:07:39.619 --> 00:07:41.590
+ambiente herdado permite reconhecer isso.
+
+146
+00:07:42.310 --> 00:07:45.290
+É uma indicação útil, não um histórico completo nem uma prova de autoria.
+
+147
+00:07:46.770 --> 00:07:50.393
+No menu de contexto, você pode copiar a linha de comando, copiar o caminho ou
+
+148
+00:07:50.393 --> 00:07:51.710
+abrir a pasta do executável.
+
+149
+00:07:52.370 --> 00:07:56.183
+Em Execução aparecem idade, CPU suavizada, último intervalo e quantidade de
+
+150
+00:07:56.183 --> 00:07:56.590
+threads.
+
+151
+00:07:57.430 --> 00:08:00.310
+No Linux, descritores são a contagem de arquivos e recursos abertos.
+
+152
+00:08:00.970 --> 00:08:03.430
+Aqui vemos a quantidade, não uma lista de cada arquivo.
+
+153
+00:08:11.290 --> 00:08:14.792
+Para nomes conhecidos, a ficha explica a função do processo e o risco de
+
+154
+00:08:14.792 --> 00:08:15.230
+encerrar.
+
+155
+00:08:15.230 --> 00:08:19.190
+Mesmo uma ação segura para o sistema pode causar perda de trabalho não salvo.
+
+156
+00:08:19.190 --> 00:08:23.330
+Na distribuição Linux indicada na tela, pacote e código de verificação
+
+157
+00:08:23.330 --> 00:08:26.110
+podem ser comparados ao banco local do gerenciador de pacotes.
+
+158
+00:08:26.110 --> 00:08:28.790
+Essa conferência não é uma assinatura digital.
+
+159
+00:08:28.790 --> 00:08:32.670
+O consumo gráfico por processo aparece quando o driver informa.
+
+160
+00:08:36.250 --> 00:08:39.170
+Antes de encerrar processos, proteja o que precisa continuar.
+
+161
+00:08:39.730 --> 00:08:43.279
+Clique no cadeado da linha, escolha a opção de proteção no menu ou use o botão
+
+162
+00:08:43.279 --> 00:08:43.870
+dos detalhes.
+
+163
+00:08:44.330 --> 00:08:47.230
+A proteção vale para todas as instâncias do mesmo nome e fica salva.
+
+164
+00:08:47.930 --> 00:08:49.950
+Processos críticos recebem proteção automática.
+
+165
+00:08:50.610 --> 00:08:53.230
+Essas regras impedem ações feitas por este aplicativo;
+
+166
+00:08:53.670 --> 00:08:56.470
+outros programas e o sistema continuam independentes.
+
+167
+00:08:57.530 --> 00:09:01.250
+Neste exemplo descartável, o xis da linha encerra o processo imediatamente.
+
+168
+00:09:02.290 --> 00:09:05.289
+Delete, Finalizar processo no menu e Finalizar nos detalhes são caminhos
+
+169
+00:09:05.289 --> 00:09:05.830
+equivalentes.
+
+170
+00:09:06.110 --> 00:09:07.410
+Não aparece caixa de confirmação.
+
+171
+00:09:08.210 --> 00:09:10.910
+Use esses controles depois de salvar o trabalho e identificar a linha.
+
+172
+00:09:11.530 --> 00:09:14.350
+Enquanto você digita num campo de texto, Delete pertence ao campo.
+
+173
+00:09:15.810 --> 00:09:19.721
+Depois da ação, leia o aviso. Ele informa processos finalizados, protegidos
+
+174
+00:09:19.721 --> 00:09:21.390
+poupados ou falhas de permissão.
+
+175
+00:09:22.210 --> 00:09:25.429
+A memória indicada como liberada é uma estimativa baseada nos consumos da
+
+176
+00:09:25.429 --> 00:09:25.650
+ação.
+
+177
+00:09:26.270 --> 00:09:28.270
+Confira o medidor global para acompanhar a máquina;
+
+178
+00:09:28.910 --> 00:09:31.550
+aquele aviso não é uma medição exata da redução física de RAM.
+
+179
+00:09:35.490 --> 00:09:38.050
+Na Árvore, cada nível mostra quem está ligado a quem.
+
+180
+00:09:38.570 --> 00:09:40.270
+Abra pela seta ou com dois cliques na linha.
+
+181
+00:09:40.790 --> 00:09:43.010
+Expandir tudo e Recolher controlam a visão inteira.
+
+182
+00:09:43.870 --> 00:09:46.670
+Um ancestral esmaecido pode permanecer para dar contexto a um filtro.
+
+183
+00:09:47.350 --> 00:09:50.410
+Compare sempre a memória deste processo com a soma dele e dos filhos.
+
+184
+00:09:55.490 --> 00:09:59.297
+Para encerrar uma árvore, selecione o pai e use Shift com Delete, Shift com o
+
+185
+00:09:59.297 --> 00:10:01.670
+xis ou Finalizar árvore no menu ou nos detalhes.
+
+186
+00:10:02.470 --> 00:10:04.150
+Os descendentes protegidos são poupados.
+
+187
+00:10:04.770 --> 00:10:07.070
+Se o próprio pai estiver travado, a solicitação é barrada.
+
+188
+00:10:07.830 --> 00:10:10.974
+Nesta demonstração, o filho protegido permanece enquanto os processos
+
+189
+00:10:10.974 --> 00:10:12.250
+descartáveis são encerrados.
+
+190
+00:10:13.690 --> 00:10:17.346
+Na Lista agrupada, o xis do cabeçalho age sobre os processos daquele grupo,
+
+191
+00:10:17.346 --> 00:10:20.270
+mesmo sem relação de pai e filho. Ele também respeita locks.
+
+192
+00:10:21.010 --> 00:10:24.694
+Isso é diferente de finalizar uma árvore. Use uma busca e filtros conscientes
+
+193
+00:10:24.694 --> 00:10:26.130
+para saber o conjunto exibido.
+
+194
+00:10:26.910 --> 00:10:29.810
+Para liberar novamente o exemplo protegido, clique em Desproteger.
+
+195
+00:10:36.210 --> 00:10:39.230
+Clique em Mini para transformar o RamDog num painel compacto.
+
+196
+00:10:39.550 --> 00:10:43.432
+CPU, RAM, GPU e disco ficam em dois por dois, com temperaturas e rotações
+
+197
+00:10:43.432 --> 00:10:44.070
+disponíveis.
+
+198
+00:10:44.810 --> 00:10:46.070
+Arraste pelo fundo para posicionar.
+
+199
+00:10:46.450 --> 00:10:49.050
+O botão topo alterna a preferência de ficar sobre outras janelas.
+
+200
+00:10:49.890 --> 00:10:52.010
+O modo e essa preferência são lembrados quando você reabre.
+
+201
+00:10:54.410 --> 00:10:58.150
+Na janela pequena, o botão de pausa congela a leitura; a seta retoma.
+
+202
+00:10:58.790 --> 00:11:01.648
+Clique no intervalo para alternar entre meio segundo, um segundo, dois
+
+203
+00:11:01.648 --> 00:11:02.710
+segundos e cinco segundos.
+
+204
+00:11:03.410 --> 00:11:05.890
+A função desses controles é a mesma do rodapé da janela principal.
+
+205
+00:11:06.530 --> 00:11:10.313
+Os atalhos F cinco e Delete, usados na janela completa, não funcionam nessa
+
+206
+00:11:10.313 --> 00:11:11.070
+janela pequena.
+
+207
+00:11:14.410 --> 00:11:18.110
+O traço minimiza; volte pela barra de tarefas ou pelo gerenciador de janelas.
+
+208
+00:11:18.110 --> 00:11:20.750
+O botão expandir retorna à janela completa.
+
+209
+00:11:20.750 --> 00:11:23.030
+Dois cliques no fundo também retornam.
+
+210
+00:11:23.030 --> 00:11:26.366
+O xis fecha o aplicativo, por isso use expandir quando quiser continuar
+
+211
+00:11:26.366 --> 00:11:26.930
+trabalhando.
+
+212
+00:11:26.930 --> 00:11:30.830
+Se fechar no Mini, a próxima abertura pode voltar ao mesmo modo.
+
+213
+00:11:34.730 --> 00:11:37.970
+A faixa inferior pode mostrar rotações e o botão Estabilizar.
+
+214
+00:11:38.250 --> 00:11:40.530
+Ele usa o mesmo controle de ventoinhas da tela Térmico.
+
+215
+00:11:41.430 --> 00:11:44.837
+Se o equipamento ou a autenticação não fornecerem controle, o botão não fica
+
+216
+00:11:44.837 --> 00:11:45.330
+disponível.
+
+217
+00:11:45.870 --> 00:11:49.764
+Ver temperatura ou rotação, sozinho, não significa que aquela ventoinha pode
+
+218
+00:11:49.764 --> 00:11:50.430
+ser ajustada.
+
+219
+00:11:54.010 --> 00:11:57.710
+Partida reúne serviços, temporizadores, sockets e aplicativos de login.
+
+220
+00:11:57.710 --> 00:12:00.410
+A origem distingue usuário, sistema e autostart.
+
+221
+00:12:00.410 --> 00:12:03.210
+Leia Estado e RAM para entender o que foi encontrado.
+
+222
+00:12:03.210 --> 00:12:07.047
+Use o campo Buscar dentro do painel Linux para filtrar nome, descrição ou
+
+223
+00:12:07.047 --> 00:12:07.310
+tipo.
+
+224
+00:12:07.310 --> 00:12:11.110
+Atualizar relê o inventário; avisos de acesso ficam na própria tela.
+
+225
+00:12:12.170 --> 00:12:16.182
+O checkbox Iniciar responde se aquela entrada deve subir automaticamente.
+
+226
+00:12:16.182 --> 00:12:19.699
+Desmarcar não encerra um serviço já rodando. Marcar não o inicia
+
+227
+00:12:19.699 --> 00:12:23.985
+imediatamente. Para aplicativos de autostart, a mudança vale no próximo login.
+
+228
+00:12:23.985 --> 00:12:28.216
+Entradas essenciais, estáticas ou gerenciadas por dependências podem aparecer
+
+229
+00:12:28.216 --> 00:12:29.590
+com o controle bloqueado.
+
+230
+00:12:33.170 --> 00:12:36.810
+Para agir agora, use Iniciar ou Parar na coluna Ações de uma unidade.
+
+231
+00:12:37.370 --> 00:12:39.810
+Aqui usamos um serviço criado apenas para a demonstração.
+
+232
+00:12:40.330 --> 00:12:42.150
+Ações de sistema podem pedir autenticação;
+
+233
+00:12:42.770 --> 00:12:44.910
+unidades de usuário dependem do barramento da sessão.
+
+234
+00:12:45.330 --> 00:12:48.155
+Não é necessário abrir a interface inteira como root para usar esses
+
+235
+00:12:48.155 --> 00:12:48.570
+controles.
+
+236
+00:12:53.570 --> 00:12:57.411
+Depois de revisar sua partida, dê um nome ao preset e clique em Salvar estado
+
+237
+00:12:57.411 --> 00:12:57.710
+atual.
+
+238
+00:12:58.410 --> 00:13:01.390
+Ele guarda ligado ou desligado das entradas que podem ser alteradas.
+
+239
+00:13:02.190 --> 00:13:04.490
+Não guarda se o serviço estava executando naquele instante.
+
+240
+00:13:05.210 --> 00:13:08.010
+Salvar outro estado com o mesmo nome substitui o preset anterior.
+
+241
+00:13:09.490 --> 00:13:11.590
+Abra Carregar preset e escolha o nome.
+
+242
+00:13:12.210 --> 00:13:15.306
+Antes de aplicar, o RamDog lista as diferenças concretas: o que será
+
+243
+00:13:15.306 --> 00:13:16.990
+habilitado e o que será desabilitado.
+
+244
+00:13:17.790 --> 00:13:21.530
+Aplicar alterações executa essa lista; Cancelar abandona a proposta. Confira o
+
+245
+00:13:21.530 --> 00:13:22.010
+resultado.
+
+246
+00:13:22.710 --> 00:13:25.467
+Se uma operação falhar, não presuma que todas as anteriores foram
+
+247
+00:13:25.467 --> 00:13:26.570
+automaticamente desfeitas.
+
+248
+00:13:33.490 --> 00:13:35.570
+O preset não recria entradas ausentes.
+
+249
+00:13:35.870 --> 00:13:38.910
+A interface Linux atual também não oferece excluir presets de Partida.
+
+250
+00:13:39.550 --> 00:13:41.670
+Use nomes claros, como trabalho ou apresentação.
+
+251
+00:13:42.330 --> 00:13:45.130
+Depois veremos onde guardar uma cópia das configurações.
+
+252
+00:13:48.730 --> 00:13:52.574
+Desperdício, no Linux, lista unidades em segundo plano e ordena o consumo de
+
+253
+00:13:52.574 --> 00:13:53.990
+memória que conseguiu medir.
+
+254
+00:13:54.450 --> 00:13:57.830
+Confira nome, origem, descrição e número do processo antes de agir.
+
+255
+00:13:58.650 --> 00:14:01.170
+O filtro Somente em execução esconde unidades paradas.
+
+256
+00:14:01.890 --> 00:14:04.230
+Para ver as unidades paradas, deixe esse filtro desligado.
+
+257
+00:14:04.710 --> 00:14:06.730
+Clique em Atualizar para consultar o estado novamente.
+
+258
+00:14:07.050 --> 00:14:10.330
+Se faltarem dados para medir a memória, isso não significa consumo zero.
+
+259
+00:14:11.730 --> 00:14:15.450
+No serviço exclusivo de demonstração, Iniciar coloca a unidade em execução.
+
+260
+00:14:15.950 --> 00:14:16.970
+Parar interrompe agora.
+
+261
+00:14:17.550 --> 00:14:19.710
+Reiniciar faz um novo ciclo de parada e abertura.
+
+262
+00:14:20.270 --> 00:14:23.886
+Os botões acompanham o estado atual, e unidades protegidas não oferecem ações
+
+263
+00:14:23.886 --> 00:14:24.450
+destrutivas.
+
+264
+00:14:25.010 --> 00:14:28.318
+Observe o estado depois de cada clique, sem repetir a ação enquanto ela está
+
+265
+00:14:28.318 --> 00:14:28.710
+pendente.
+
+266
+00:14:30.250 --> 00:14:32.610
+A opção Iniciar no boot permite a partida futura;
+
+267
+00:14:33.170 --> 00:14:34.450
+Não iniciar no boot a desabilita.
+
+268
+00:14:34.890 --> 00:14:37.450
+Isso é diferente dos botões Iniciar e Parar, que atuam agora.
+
+269
+00:14:38.290 --> 00:14:39.950
+Leia a descrição e decida conforme sua rotina.
+
+270
+00:14:40.650 --> 00:14:42.670
+Um serviço listado aqui não é necessariamente inútil.
+
+271
+00:14:43.370 --> 00:14:47.155
+Desligar serviços não garante uma quantidade fixa de memória economizada nem
+
+272
+00:14:47.155 --> 00:14:48.550
+um ganho fixo de desempenho.
+
+273
+00:14:52.470 --> 00:14:54.210
+Térmico agrupa os sensores por componente.
+
+274
+00:14:54.710 --> 00:14:57.150
+O destaque do cartão é a maior temperatura daquele grupo;
+
+275
+00:14:57.710 --> 00:15:00.210
+abaixo ficam as demais leituras oferecidas pelo hardware.
+
+276
+00:15:00.530 --> 00:15:02.090
+Role para conferir todos os cartões.
+
+277
+00:15:02.610 --> 00:15:05.690
+Nem toda placa expõe temperatura de memória, rotação ou consumo.
+
+278
+00:15:06.130 --> 00:15:08.710
+A ausência de um sensor não deve ser preenchida com uma estimativa.
+
+279
+00:15:10.690 --> 00:15:14.250
+No Linux, a interface indicada na tela fornece as leituras dos sensores.
+
+280
+00:15:14.910 --> 00:15:18.653
+Quando o driver oferece controle PWM, aparece Ativar controle de ventoinhas,
+
+281
+00:15:18.653 --> 00:15:19.490
+com autenticação.
+
+282
+00:15:20.090 --> 00:15:23.510
+O botão autoriza um auxiliar separado; a janela continua como usuário normal.
+
+283
+00:15:24.210 --> 00:15:26.470
+Use as rotações disponíveis para acompanhar o equipamento.
+
+284
+00:15:26.470 --> 00:15:30.990
+Ler rotações por minuto não garante permissão para escrever no controle PWM.
+
+285
+00:15:32.050 --> 00:15:35.353
+A gravação pode mostrar leituras reais e explicar controles que este
+
+286
+00:15:35.353 --> 00:15:36.470
+equipamento não libera.
+
+287
+00:15:36.990 --> 00:15:39.470
+Isso é diferente de mostrar uma ventoinha respondendo a um ajuste.
+
+288
+00:15:40.050 --> 00:15:43.987
+Antes de controlar hardware, identifique o controlador e evite dois programas
+
+289
+00:15:43.987 --> 00:15:45.470
+tentando ajustar o mesmo PWM.
+
+290
+00:15:46.470 --> 00:15:49.190
+As opções Manual, Auto e Estabilizar serão explicadas a seguir.
+
+291
+00:15:53.170 --> 00:15:56.370
+Com controle disponível, arraste o slider ou digite a porcentagem.
+
+292
+00:15:56.730 --> 00:15:59.050
+No Linux, a faixa manual vai de trinta a cem por cento.
+
+293
+00:15:59.050 --> 00:16:01.070
+No Windows, vai de zero a cem.
+
+294
+00:16:01.070 --> 00:16:02.990
+O ajuste é enviado ao concluir o gesto.
+
+295
+00:16:03.470 --> 00:16:06.746
+A proteção térmica pode forçar cem por cento quando a CPU atinge oitenta
+
+296
+00:16:06.746 --> 00:16:07.610
+graus, até esfriar.
+
+297
+00:16:09.090 --> 00:16:13.044
+Auto solta o ajuste manual. No Windows, devolve o controle à BIOS. No Linux,
+
+298
+00:16:13.044 --> 00:16:16.946
+restaura o estado anterior do controlador, que também pode ter sido manual.
+
+299
+00:16:16.946 --> 00:16:20.692
+Por isso, Auto não significa a mesma implementação em todos os sistemas.
+
+300
+00:16:20.692 --> 00:16:24.750
+Confira a resposta do equipamento e a indicação de estado mostrada na linha da
+
+301
+00:16:24.750 --> 00:16:25.270
+ventoinha.
+
+302
+00:16:26.970 --> 00:16:30.312
+Estabilizar usa uma curva: cinquenta por cento até oitenta graus, subindo até
+
+303
+00:16:30.312 --> 00:16:31.310
+cem aos noventa e dois.
+
+304
+00:16:31.950 --> 00:16:33.910
+A noventa e cinco, entra o teto imediato.
+
+305
+00:16:34.710 --> 00:16:37.170
+A variação normal é limitada para evitar mudanças bruscas.
+
+306
+00:16:37.310 --> 00:16:39.990
+Enquanto a curva está ativa, os controles manuais ficam bloqueados.
+
+307
+00:16:40.610 --> 00:16:41.910
+Clique novamente para soltar o modo.
+
+308
+00:16:44.010 --> 00:16:46.850
+O helper procura restaurar o controle quando o RamDog termina.
+
+309
+00:16:47.850 --> 00:16:50.590
+No Linux, também trata encerramento normal e sinais de término.
+
+310
+00:16:51.130 --> 00:16:54.475
+Uma interrupção brutal do próprio helper ou falta de energia não permite
+
+311
+00:16:54.475 --> 00:16:55.450
+executar restauração.
+
+312
+00:16:56.210 --> 00:16:58.650
+Esses controles são para ventoinhas compatíveis da placa-mãe;
+
+313
+00:16:59.090 --> 00:17:01.330
+não substituem a curva própria da ventoinha da GPU.
+
+314
+00:17:05.710 --> 00:17:07.210
+Telas no Linux precisa de Hyprland.
+
+315
+00:17:07.770 --> 00:17:10.710
+Outros compositores e uma sessão X onze não oferecem esse backend.
+
+316
+00:17:11.290 --> 00:17:14.448
+Aqui, o mapa deve mostrar apenas monitores e janelas da sessão isolada de
+
+317
+00:17:14.448 --> 00:17:15.010
+demonstração.
+
+318
+00:17:15.250 --> 00:17:16.330
+Atualizar relê o arranjo.
+
+319
+00:17:17.190 --> 00:17:19.870
+Se aparecer um aviso de indisponibilidade, ele descreve o ambiente;
+
+320
+00:17:20.350 --> 00:17:22.190
+não significa que as janelas foram organizadas.
+
+321
+00:17:23.650 --> 00:17:26.895
+Clique num retângulo do mapa ou no checkbox da lista para selecionar uma
+
+322
+00:17:26.895 --> 00:17:27.210
+janela.
+
+323
+00:17:27.730 --> 00:17:28.910
+Você pode selecionar várias.
+
+324
+00:17:29.390 --> 00:17:30.950
+Escolha o monitor de destino e a grade:
+
+325
+00:17:31.370 --> 00:17:34.150
+Inteira, duas colunas, três colunas ou quatro quadrantes.
+
+326
+00:17:34.910 --> 00:17:38.315
+Cada seleção continua visível, para você conferir quais janelas participarão
+
+327
+00:17:38.315 --> 00:17:39.570
+antes de mover qualquer uma.
+
+328
+00:17:42.770 --> 00:17:46.270
+Organizar selecionadas encaixa esse conjunto nas zonas escolhidas.
+
+329
+00:17:46.270 --> 00:17:49.570
+Se houver mais janelas que zonas, algumas podem se sobrepor.
+
+330
+00:17:49.570 --> 00:17:52.070
+Para mover individualmente, arraste o retângulo.
+
+331
+00:17:52.070 --> 00:17:54.570
+Com Encaixar na grade ligado, ele cai numa zona;
+
+332
+00:17:54.570 --> 00:17:57.570
+desligado, a posição fica livre dentro da área útil.
+
+333
+00:17:57.570 --> 00:18:00.170
+O ajuste pode colocar a janela em modo flutuante.
+
+334
+00:18:03.890 --> 00:18:06.310
+O botão Focar ativa a janela correspondente.
+
+335
+00:18:07.030 --> 00:18:09.853
+Quando ela está flutuante, Voltar ao mosaico devolve a organização ao
+
+336
+00:18:09.853 --> 00:18:11.490
+gerenciador de janelas indicado na tela.
+
+337
+00:18:12.270 --> 00:18:15.975
+Esse botão devolve o controle ao compositor; ele não recupera uma posição
+
+338
+00:18:15.975 --> 00:18:16.330
+antiga.
+
+339
+00:18:16.990 --> 00:18:20.267
+Na rotina, selecione somente as janelas que pretende reorganizar e confira o
+
+340
+00:18:20.267 --> 00:18:21.690
+monitor antes de aplicar a grade.
+
+341
+00:18:25.770 --> 00:18:29.352
+Arrume as janelas, selecione as que pertencem à rotina, dê um nome e clique em
+
+342
+00:18:29.352 --> 00:18:30.270
+Salvar selecionadas.
+
+343
+00:18:30.670 --> 00:18:34.329
+O cenário guarda executáveis e posições em frações da área útil, junto do
+
+344
+00:18:34.329 --> 00:18:34.730
+monitor.
+
+345
+00:18:34.950 --> 00:18:37.230
+Ele salva as janelas selecionadas, não todo o desktop.
+
+346
+00:18:38.110 --> 00:18:40.530
+Usar o mesmo nome substitui o cenário anterior.
+
+347
+00:18:41.610 --> 00:18:45.348
+Expanda o cenário e revise Abrir se fechada em cada item. Desmarcado, o
+
+348
+00:18:45.348 --> 00:18:47.190
+cenário só procura o que já existe.
+
+349
+00:18:47.670 --> 00:18:49.270
+Marcado, tenta abrir o programa ausente.
+
+350
+00:18:49.830 --> 00:18:53.464
+Aplicar cenário reposiciona as correspondências e aguarda as novas janelas por
+
+351
+00:18:53.464 --> 00:18:54.210
+alguns segundos.
+
+352
+00:18:54.770 --> 00:18:58.697
+Veja o resultado e eventuais erros, em vez de assumir que todos os programas
+
+353
+00:18:58.697 --> 00:18:59.110
+abriram.
+
+354
+00:19:01.410 --> 00:19:04.790
+Cenários não recuperam documentos ou sessões internas dos aplicativos.
+
+355
+00:19:05.290 --> 00:19:08.476
+Se o monitor salvo não puder ser encontrado pelo nome nem pelo índice, a
+
+356
+00:19:08.476 --> 00:19:09.450
+aplicação pode falhar.
+
+357
+00:19:10.430 --> 00:19:14.037
+A interface Linux atual não oferece excluir cenário nem editar manualmente
+
+358
+00:19:14.037 --> 00:19:15.450
+todos os campos de cada item.
+
+359
+00:19:16.190 --> 00:19:19.520
+Para outra configuração, rearrume, selecione e salve novamente com um nome
+
+360
+00:19:19.520 --> 00:19:19.790
+claro.
+
+361
+00:19:23.730 --> 00:19:27.003
+Agora estamos na interface da release Windows zero ponto nove ponto zero,
+
+362
+00:19:27.003 --> 00:19:27.810
+executada no Wine.
+
+363
+00:19:28.590 --> 00:19:30.870
+A telemetria nativa não foi validada nesta gravação.
+
+364
+00:19:31.510 --> 00:19:34.850
+No Windows, o comando PowerShell da tela instala o pacote e cria atalhos.
+
+365
+00:19:35.550 --> 00:19:38.170
+Ao abrir, a elevação libera ações e leituras adicionais.
+
+366
+00:19:38.650 --> 00:19:41.490
+Se estiver limitado, o botão Admin permite tentar reabrir elevado.
+
+367
+00:19:42.930 --> 00:19:46.370
+No Windows, Privado corresponde ao conjunto de memória exclusivo do processo;
+
+368
+00:19:46.810 --> 00:19:48.470
+Commit representa memória confirmada.
+
+369
+00:19:48.990 --> 00:19:52.589
+O detalhe da RAM separa processos, pools do kernel e uma parcela calculada por
+
+370
+00:19:52.589 --> 00:19:53.050
+diferença.
+
+371
+00:19:53.590 --> 00:19:56.730
+O chip Sistema não processo mostra ou esconde essas linhas especiais.
+
+372
+00:19:57.530 --> 00:20:00.850
+Elas não têm PID nem botão de finalizar, e escondê-las não reduz o consumo.
+
+373
+00:20:02.650 --> 00:20:05.890
+Ao selecionar um executável, a assinatura é consultada sob demanda.
+
+374
+00:20:06.470 --> 00:20:09.699
+O resultado pode informar signatário, ausência, falha ou impossibilidade de
+
+375
+00:20:09.699 --> 00:20:10.130
+verificar.
+
+376
+00:20:10.730 --> 00:20:14.150
+A consulta usa confiança local, sem checagem de revogação pela rede.
+
+377
+00:20:14.610 --> 00:20:15.890
+Assinatura não é antivírus.
+
+378
+00:20:16.450 --> 00:20:19.130
+Quando um processo hospeda serviços, a ficha também os relaciona;
+
+379
+00:20:19.670 --> 00:20:21.230
+o expansor mostra os restantes.
+
+380
+00:20:22.290 --> 00:20:25.550
+Para sensores completos no Windows, deixe o auxiliar identificado na tela
+
+381
+00:20:25.550 --> 00:20:28.050
+junto do executável e instale o ambiente ponto net oito.
+
+382
+00:20:28.590 --> 00:20:32.125
+Leituras de CPU, memória e ventoinhas dependem de permissões e equipamento
+
+383
+00:20:32.125 --> 00:20:32.650
+compatível.
+
+384
+00:20:33.250 --> 00:20:35.610
+A placa NVIDIA pode oferecer outra forma de leitura.
+
+385
+00:20:36.090 --> 00:20:38.110
+Se faltar o auxiliar ou suporte, a tela explica.
+
+386
+00:20:38.710 --> 00:20:40.930
+Um traço indica que a leitura não foi obtida.
+
+387
+00:20:44.890 --> 00:20:48.300
+No Windows, Partida reúne entradas do registro, pasta Iniciar, tarefas
+
+388
+00:20:48.300 --> 00:20:51.710
+agendadas, serviços, aplicativos empacotados, Winlogon e Active Setup.
+
+389
+00:20:52.670 --> 00:20:56.390
+A origem diz onde cada entrada mora; o escopo distingue sua conta da máquina.
+
+390
+00:20:56.830 --> 00:20:58.950
+Selecione uma linha para ler comando, origem e fase.
+
+391
+00:20:59.370 --> 00:21:02.510
+Alguns pontos do arranque são somente leitura por serem sensíveis.
+
+392
+00:21:03.570 --> 00:21:07.030
+Use a busca para nome, comando ou origem; o xis limpa e Atualizar relê.
+
+393
+00:21:07.610 --> 00:21:10.890
+Os contadores Sobe com o PC, Não sobe e Quebradas isolam esses estados.
+
+394
+00:21:11.290 --> 00:21:12.890
+Clique outra vez para voltar ao conjunto.
+
+395
+00:21:13.230 --> 00:21:14.750
+Quebrada significa destino ausente.
+
+396
+00:21:15.250 --> 00:21:19.030
+Os chips de origem filtram tipos e mantêm pelo menos um tipo selecionado.
+
+397
+00:21:20.090 --> 00:21:23.867
+Separar por oferece cinco opções: estado seguido de fase, estado seguido de
+
+398
+00:21:23.867 --> 00:21:25.730
+tipo, só fase, só tipo e lista plana.
+
+399
+00:21:25.730 --> 00:21:29.659
+As fases são Seus programas, Ao entrar na conta, Com a máquina e Antes do
+
+400
+00:21:29.659 --> 00:21:30.090
+Windows.
+
+401
+00:21:30.090 --> 00:21:32.330
+Clique nas faixas para abrir ou recolher.
+
+402
+00:21:32.330 --> 00:21:35.000
+Os botões de expansão controlam todos os grupos.
+
+403
+00:21:38.090 --> 00:21:41.290
+Você também pode esconder Microsoft ou mostrar somente o que está rodando.
+
+404
+00:21:41.650 --> 00:21:45.490
+Os cabeçalhos ordenam nome, tipo de origem, escopo, estado atual e uso.
+
+405
+00:21:46.090 --> 00:21:49.630
+O checkbox da entrada controla a partida, enquanto Agora informa execução.
+
+406
+00:21:50.250 --> 00:21:52.450
+Ligar a partida não significa iniciar neste instante;
+
+407
+00:21:52.950 --> 00:21:54.850
+desligar não encerra o processo que já existe.
+
+408
+00:21:56.290 --> 00:22:00.267
+O botão Finalizar encerra o processo ligado à entrada e respeita as proteções
+
+409
+00:22:00.267 --> 00:22:00.990
+do aplicativo.
+
+410
+00:22:01.690 --> 00:22:04.991
+Remover abre uma confirmação para apagar a entrada de partida. O programa
+
+411
+00:22:04.991 --> 00:22:05.850
+continua instalado.
+
+412
+00:22:06.510 --> 00:22:10.508
+A entrada removida não tem restauração automática. Leia a descrição e escolha
+
+413
+00:22:10.508 --> 00:22:11.650
+Confirmar ou Cancelar.
+
+414
+00:22:12.370 --> 00:22:15.490
+Entradas que afetam a máquina inteira podem pedir permissão de administrador.
+
+415
+00:22:19.290 --> 00:22:21.890
+Para presets, escreva um nome e use Salvar atual.
+
+416
+00:22:21.890 --> 00:22:25.191
+Escolha pelo combo e clique em Aplicar para revisar as mudanças antes de
+
+417
+00:22:25.191 --> 00:22:25.650
+confirmar.
+
+418
+00:22:25.650 --> 00:22:28.350
+Excluir remove o preset salvo, não os programas.
+
+419
+00:22:28.350 --> 00:22:30.530
+O preset guarda estados alternáveis.
+
+420
+00:22:30.530 --> 00:22:32.890
+Entradas que sumiram não são recriadas.
+
+421
+00:22:32.890 --> 00:22:36.790
+Quando necessário, alterações de máquina em lote podem solicitar elevação.
+
+422
+00:22:43.290 --> 00:22:46.794
+Scan de uso mostra programas frequentes a partir do histórico de foco do
+
+423
+00:22:46.794 --> 00:22:48.790
+Windows e do tempo observado pelo RamDog.
+
+424
+00:22:48.790 --> 00:22:51.790
+O painel traz tempo, aberturas e última utilização.
+
+425
+00:22:51.790 --> 00:22:54.290
+Se ainda não existe histórico, pode ficar vazio.
+
+426
+00:22:54.290 --> 00:22:56.290
+Mais Partida cria um atalho de usuário;
+
+427
+00:22:56.290 --> 00:22:58.290
+quem já participa recebe um selo.
+
+428
+00:22:58.290 --> 00:23:00.090
+Fechar encerra apenas o painel.
+
+429
+00:23:04.010 --> 00:23:06.170
+Atualizar relê os dados do Desperdício Windows.
+
+430
+00:23:06.710 --> 00:23:10.223
+A seção Defender informa proteção em tempo real, proteção contra alterações e
+
+431
+00:23:10.223 --> 00:23:11.090
+carga de varredura.
+
+432
+00:23:11.650 --> 00:23:13.450
+Essas integrações podem faltar no Wine;
+
+433
+00:23:14.030 --> 00:23:17.030
+a interface real não comprova funcionamento nativo nesta gravação.
+
+434
+00:23:18.450 --> 00:23:21.090
+No campo de exclusões, cada linha representa uma pasta.
+
+435
+00:23:21.450 --> 00:23:23.430
+Adicionar exclusões abre a revisão dos caminhos.
+
+436
+00:23:24.450 --> 00:23:27.090
+Confirmar tira esses arquivos da verificação em tempo real;
+
+437
+00:23:27.330 --> 00:23:28.150
+Cancelar abandona.
+
+438
+00:23:28.790 --> 00:23:31.770
+Isso muda a proteção, portanto não é um passo obrigatório de otimização.
+
+439
+00:23:32.310 --> 00:23:35.821
+A interface não oferece um botão correspondente para remover todas essas
+
+440
+00:23:35.821 --> 00:23:36.650
+exclusões depois.
+
+441
+00:23:38.130 --> 00:23:41.611
+Os botões cinco, dez e vinte por cento ajustam a carga média da varredura
+
+442
+00:23:41.611 --> 00:23:43.470
+agendada, não todo consumo do Defender.
+
+443
+00:23:44.010 --> 00:23:47.010
+Pausar tempo real também altera proteção e exige confirmação.
+
+444
+00:23:47.630 --> 00:23:49.090
+Reativar tempo real a devolve.
+
+445
+00:23:49.870 --> 00:23:53.172
+Com proteção contra alterações ligada, a pausa fica bloqueada e pode aparecer
+
+446
+00:23:53.172 --> 00:23:54.330
+Abrir Segurança do Windows.
+
+447
+00:23:55.810 --> 00:23:59.842
+Nos serviços, Parar vale para agora. Desativar para e muda a inicialização
+
+448
+00:23:59.842 --> 00:24:02.130
+para impedir nova partida; há confirmação.
+
+449
+00:24:02.870 --> 00:24:06.113
+Reativar devolve a possibilidade de iniciar conforme a configuração usada pelo
+
+450
+00:24:06.113 --> 00:24:06.570
+aplicativo.
+
+451
+00:24:07.330 --> 00:24:10.933
+Leia a descrição e o estado antes de agir. Um serviço dispensável para uma
+
+452
+00:24:10.933 --> 00:24:13.270
+pessoa pode sustentar recursos usados por outra.
+
+453
+00:24:14.650 --> 00:24:18.576
+A lista inclui busca, o serviço de pré-carregamento identificado na tela,
+
+454
+00:24:18.576 --> 00:24:22.501
+telemetria, entrega de atualizações, relatórios de erro, mapas, telefone,
+
+455
+00:24:22.501 --> 00:24:25.190
+serviços Xbox, localização, registro remoto e fax.
+
+456
+00:24:25.930 --> 00:24:28.010
+O Windows Update permite apenas parada temporária.
+
+457
+00:24:28.650 --> 00:24:30.710
+Serviços de proteção ficam bloqueados quando presentes.
+
+458
+00:24:31.590 --> 00:24:32.790
+Só aparecem itens encontrados.
+
+459
+00:24:32.910 --> 00:24:35.430
+A ausência de um item não mede a memória economizada.
+
+460
+00:24:36.490 --> 00:24:39.890
+Em aplicativos de sistema, Finalizar interrompe os processos atuais;
+
+461
+00:24:40.450 --> 00:24:43.030
+Desinstalar remove o pacote do usuário após confirmação.
+
+462
+00:24:43.450 --> 00:24:44.390
+São efeitos diferentes.
+
+463
+00:24:44.930 --> 00:24:48.494
+O catálogo pode incluir Widgets, Vincular ao Celular, Game Bar, Copilot,
+
+464
+00:24:48.494 --> 00:24:48.890
+Cortana,
+
+465
+00:24:49.110 --> 00:24:51.230
+Teams pessoal, Notícias, Obter Ajuda e Solitaire.
+
+466
+00:24:51.850 --> 00:24:52.910
+Só instalados aparecem.
+
+467
+00:24:53.030 --> 00:24:55.730
+A reinstalação, quando desejada, é feita pela Microsoft Store.
+
+468
+00:24:57.130 --> 00:25:00.410
+Nos modais desta tela, Confirmar aplica e Cancelar abandona.
+
+469
+00:25:00.690 --> 00:25:02.250
+Enter confirma e Escape cancela.
+
+470
+00:25:02.970 --> 00:25:05.730
+Confira qual janela está pedindo a decisão antes de usar o teclado.
+
+471
+00:25:06.370 --> 00:25:09.430
+Diferentemente desses controles, finalizar um processo na Lista é imediato.
+
+472
+00:25:09.910 --> 00:25:11.890
+As entradas de inicialização ficam em Partida;
+
+473
+00:25:12.390 --> 00:25:14.230
+esta tela não substitui aquele inventário.
+
+474
+00:25:18.250 --> 00:25:21.598
+Telas Windows desenha monitores em proporção, com resolução e indicação do
+
+475
+00:25:21.598 --> 00:25:22.050
+principal.
+
+476
+00:25:22.670 --> 00:25:26.170
+Atualizar relê janelas e monitores. A busca filtra título ou executável.
+
+477
+00:25:26.930 --> 00:25:30.491
+Clique na janela da lista para selecionar e focar. Permissões diferentes podem
+
+478
+00:25:30.491 --> 00:25:31.450
+impedir movimentação.
+
+479
+00:25:32.290 --> 00:25:35.907
+Nesta gravação, lembre que o ambiente é Wine e não uma validação do desktop
+
+480
+00:25:35.907 --> 00:25:36.630
+Windows nativo.
+
+481
+00:25:38.050 --> 00:25:41.934
+O seletor oferece Cheio, Metades, Deitadas, Terços, Quadrantes, Principal mais
+
+482
+00:25:41.934 --> 00:25:42.930
+dois e Centro largo.
+
+483
+00:25:43.650 --> 00:25:46.170
+Encaixar ao arrastar liga ou desliga o ajuste à zona.
+
+484
+00:25:46.710 --> 00:25:49.798
+Distribuir coloca janelas daquele monitor nas zonas, até a quantidade
+
+485
+00:25:49.798 --> 00:25:50.290
+disponível.
+
+486
+00:25:50.930 --> 00:25:54.339
+Se existirem mais janelas que zonas, as excedentes não são necessariamente
+
+487
+00:25:54.339 --> 00:25:55.030
+reposicionadas.
+
+488
+00:25:57.050 --> 00:26:00.977
+Na lista, a seta numerada envia a outro monitor, o traço minimiza e o quadrado
+
+489
+00:26:00.977 --> 00:26:01.430
+maximiza.
+
+490
+00:26:01.430 --> 00:26:04.710
+Para cenários, dê um nome e escolha Novo vazio ou Salvar atual.
+
+491
+00:26:04.710 --> 00:26:06.430
+Depois selecione o cenário.
+
+492
+00:26:06.430 --> 00:26:10.483
+O sinal de mais na linha de uma janela acrescenta sua posição atual como um
+
+493
+00:26:10.483 --> 00:26:11.510
+item desse cenário.
+
+494
+00:26:12.570 --> 00:26:16.210
+Cada item permite escolher a tela, marcar abrir e informar um trecho do título
+
+495
+00:26:16.210 --> 00:26:18.170
+para distinguir janelas do mesmo programa.
+
+496
+00:26:18.790 --> 00:26:20.710
+O xis remove apenas aquele item do cenário.
+
+497
+00:26:21.090 --> 00:26:23.810
+As posições e dimensões aparecem em porcentagens da área útil.
+
+498
+00:26:24.530 --> 00:26:26.290
+Esses campos ajudam a revisar o arranjo;
+
+499
+00:26:26.770 --> 00:26:29.130
+nem todos os números têm edição direta nesta interface.
+
+500
+00:26:34.570 --> 00:26:38.140
+Aplicar reposiciona janelas abertas e tenta lançar as ausentes com abrir
+
+501
+00:26:38.140 --> 00:26:40.470
+marcado, aguardando até vinte e cinco segundos.
+
+502
+00:26:41.150 --> 00:26:43.270
+As frações acomodam mudanças de resolução;
+
+503
+00:26:44.010 --> 00:26:46.050
+se um monitor sumir, o cenário usa o principal.
+
+504
+00:26:46.690 --> 00:26:48.830
+Isso não restaura documentos internos dos programas.
+
+505
+00:26:49.470 --> 00:26:52.710
+Excluir remove o cenário salvo, sem fechar as janelas que já estão abertas.
+
+506
+00:26:56.290 --> 00:27:00.023
+No macOS, o núcleo de processos, categorias, origem, árvore e encerramento
+
+507
+00:27:00.023 --> 00:27:00.830
+está disponível.
+
+508
+00:27:01.330 --> 00:27:04.070
+Partida, Desperdício e Telas não têm backend implementado;
+
+509
+00:27:04.610 --> 00:27:06.450
+Térmico informa que a leitura ainda não está ligada.
+
+510
+00:27:07.270 --> 00:27:10.510
+GPU e porcentagem global de atividade de disco também têm limitações.
+
+511
+00:27:11.190 --> 00:27:14.899
+Se o Gatekeeper bloquear a primeira abertura, consulte Privacidade e segurança
+
+512
+00:27:14.899 --> 00:27:15.470
+nos Ajustes.
+
+513
+00:27:16.850 --> 00:27:20.412
+Ao fechar, o RamDog guarda locks, categorias manuais, intervalo, limiar e
+
+514
+00:27:20.412 --> 00:27:22.950
+medida de memória, visão, agrupamento e estado Mini.
+
+515
+00:27:23.550 --> 00:27:26.390
+Também guarda presets de Partida e cenários de Telas, incluindo grade e
+
+516
+00:27:26.390 --> 00:27:26.710
+encaixe.
+
+517
+00:27:27.370 --> 00:27:30.290
+Busca, seleção, pausa, chips temporariamente filtrados
+
+518
+00:27:30.770 --> 00:27:34.050
+e escolha de GPU não devem ser tratados como preferências persistidas.
+
+519
+00:27:35.610 --> 00:27:38.050
+Não existe uma tela separada de configurações.
+
+520
+00:27:38.050 --> 00:27:41.610
+O arquivo fica nos caminhos indicados para Windows, Linux e macOS.
+
+521
+00:27:41.610 --> 00:27:44.982
+Com o aplicativo fechado, guarde uma cópia antes de editar ou restaurar
+
+522
+00:27:44.982 --> 00:27:46.170
+preferências manualmente.
+
+523
+00:27:46.170 --> 00:27:49.230
+Um arquivo inválido pode fazer a próxima abertura usar padrões.
+
+524
+00:27:49.230 --> 00:27:53.550
+No Linux, o local respeita a configuração de diretórios XDG.
+
+525
+00:27:58.650 --> 00:28:01.965
+O comando mostrado na tela faz o diagnóstico quando falta uma integração no
+
+526
+00:28:01.965 --> 00:28:02.230
+Linux.
+
+527
+00:28:02.690 --> 00:28:04.950
+Ele gera um relatório sem modificar o sistema.
+
+528
+00:28:05.390 --> 00:28:08.955
+O resumo inclui processos, cobertura da leitura de memória, placas gráficas,
+
+529
+00:28:08.955 --> 00:28:10.690
+janelas, itens de partida e sensores.
+
+530
+00:28:11.170 --> 00:28:14.218
+Isso ajuda a diferenciar falta de permissão, falha do controlador ou
+
+531
+00:28:14.218 --> 00:28:15.070
+integração ausente.
+
+532
+00:28:16.230 --> 00:28:18.190
+Compare o relatório aos avisos da interface;
+
+533
+00:28:18.750 --> 00:28:19.930
+dados ausentes não são zeros.
+
+534
+00:28:21.330 --> 00:28:24.525
+Os registros do serviço e o arquivo local de mensagens ajudam a investigar
+
+535
+00:28:24.525 --> 00:28:25.130
+encerramentos.
+
+536
+00:28:25.210 --> 00:28:26.730
+Os comandos e caminhos estão na tela.
+
+537
+00:28:27.810 --> 00:28:28.950
+Há também um teste de abertura:
+
+538
+00:28:29.150 --> 00:28:32.454
+uma instância própria percorre abas, medidas de memória e a janela pequena
+
+539
+00:28:32.454 --> 00:28:33.570
+durante noventa segundos.
+
+540
+00:28:34.270 --> 00:28:36.310
+Depois, fecha sem salvar essas alterações.
+
+541
+00:28:37.390 --> 00:28:40.970
+Esse diagnóstico ajuda, mas você ainda precisa testar a ação desejada.
+
+542
+00:28:42.050 --> 00:28:44.530
+Para o dia a dia, comece pelo medidor que chamou sua atenção.
+
+543
+00:28:45.410 --> 00:28:47.890
+Ordene a coluna, busque o aplicativo e abra os detalhes.
+
+544
+00:28:48.250 --> 00:28:50.410
+Confira caminho, origem e consumo próprio.
+
+545
+00:28:50.910 --> 00:28:53.990
+Proteja o que precisa continuar e salve o trabalho antes de encerrar.
+
+546
+00:28:54.690 --> 00:28:57.830
+Leia o resultado da ação e acompanhe a nova amostra para entender o efeito.
+
+547
+00:28:59.210 --> 00:29:03.130
+Escolha os programas que iniciarão com a sessão. Analise a finalidade de cada
+
+548
+00:29:03.130 --> 00:29:06.490
+serviço. Salve um cenário para organizar janelas usadas na rotina.
+
+549
+00:29:07.210 --> 00:29:10.666
+Para somente acompanhar os números, use a janela pequena. Não é preciso
+
+550
+00:29:10.666 --> 00:29:12.710
+alterar tudo: use os recursos necessários.
+
+551
+00:29:13.230 --> 00:29:16.802
+Cada recurso resolve uma tarefa. Consulte os capítulos quando surgir uma
+
+552
+00:29:16.802 --> 00:29:19.630
+necessidade e mantenha suas escolhas fáceis de restaurar.

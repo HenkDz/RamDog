@@ -12,29 +12,28 @@ use windows::core::PWSTR;
 #[cfg(windows)]
 use windows::Wdk::System::SystemInformation::{NtQuerySystemInformation, SystemProcessInformation};
 #[cfg(windows)]
-use windows::Wdk::System::Threading::{
-    NtQueryInformationProcess, ProcessBasicInformation, ProcessCommandLineInformation,
-};
+use windows::Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation, ProcessCommandLineInformation};
 #[cfg(windows)]
-use windows::Win32::Foundation::{
-    CloseHandle, HANDLE, STATUS_INFO_LENGTH_MISMATCH, UNICODE_STRING,
-};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, STATUS_INFO_LENGTH_MISMATCH, UNICODE_STRING};
+#[cfg(windows)]
+use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 #[cfg(windows)]
 use windows::Win32::Security::{
     AdjustTokenPrivileges, LookupPrivilegeValueW, SE_DEBUG_NAME, SE_PRIVILEGE_ENABLED,
     TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES,
 };
 #[cfg(windows)]
-use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
-#[cfg(windows)]
 use windows::Win32::System::ProcessStatus::{GetPerformanceInfo, PERFORMANCE_INFORMATION};
 #[cfg(windows)]
 use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 #[cfg(windows)]
 use windows::Win32::System::Threading::{
-    GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW, TerminateProcess,
-    PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ,
+    GetCurrentProcess, GetSystemTimes, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
+    TerminateProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    PROCESS_VM_READ,
 };
+#[cfg(windows)]
+use windows::Win32::Foundation::FILETIME;
 #[cfg(windows)]
 use windows::Win32::UI::Shell::IsUserAnAdmin;
 
@@ -106,11 +105,19 @@ pub struct Launcher {
     pub init_cwd: Option<String>,
     /// npm_lifecycle_event ("dev", "start"...).
     pub npm_script: Option<String>,
+    /// Steam / Proton: STEAM_COMPAT_APP_ID, SteamAppId, ou extraído do prefixo.
+    pub steam_app_id: Option<u32>,
+    /// WINEPREFIX / STEAM_COMPAT_DATA_PATH.
+    pub wine_prefix: Option<String>,
+    /// Unidade do systemd que contém o processo (folha do cgroup v2): `hermes-gateway.service`,
+    /// `agent-bench@dailywork.service`, `app-org.chromium.Chromium-123.scope`. Sobrevive a
+    /// `uwsm app`/`systemd-run`, que limpam o ambiente e reparentam para o systemd --user.
+    pub unit: Option<String>,
 }
 
 impl Launcher {
     pub fn is_empty(&self) -> bool {
-        self.agent.is_none() && self.host.is_none() && self.init_cwd.is_none()
+        self.agent.is_none() && self.host.is_none() && self.init_cwd.is_none() && self.unit_label().is_none()
     }
     /// Rótulo curto: "Claude Code · Maestri", "Maestri", "VS Code"...
     pub fn short(&self) -> String {
@@ -118,9 +125,53 @@ impl Launcher {
             (Some(a), Some(h)) => format!("{a} · {h}"),
             (Some(a), None) => a.clone(),
             (None, Some(h)) => h.clone(),
-            (None, None) => String::new(),
+            (None, None) => self.unit_label().unwrap_or_default(),
         }
     }
+    /// Nome humano da unidade do systemd, ou None quando ela não diz quem lançou.
+    pub fn unit_label(&self) -> Option<String> {
+        unit_label(self.unit.as_deref()?)
+    }
+}
+
+/// Traduz a folha do cgroup para quem lançou. `None` = unidade genérica demais para valer
+/// como origem (sessão de login, `init.scope`, raiz).
+pub(crate) fn unit_label(unit: &str) -> Option<String> {
+    let unit = unit.replace("\\x2d", "-");
+    let (stem, kind) = unit.rsplit_once('.')?;
+    if !matches!(kind, "service" | "scope") {
+        return None;
+    }
+    // `app-Hyprland-gtk-launch-d25303f7.scope` → lançado pelo menu/atalho do desktop.
+    // `app-org.chromium.Chromium-1962181.scope` → `uwsm app`/xdg: o usuário abriu.
+    if let Some(rest) = stem.strip_prefix("app-") {
+        let rest = rest.strip_prefix("graphical-").unwrap_or(rest);
+        let rest = rest.strip_prefix("Hyprland-").unwrap_or(rest);
+        let body = rest.rsplit_once('-').map(|(b, id)| if id.chars().all(|c| c.is_ascii_hexdigit()) { b } else { rest }).unwrap_or(rest);
+        return Some(match body {
+            "gtk-launch" | "xdg-terminal-exec" | "dmenu" | "walker" | "omarchy-launch" => "desktop".to_string(),
+            b if b.starts_with("org.chromium.") || b == "chromium" || b == "google-chrome" => "desktop (navegador)".to_string(),
+            "com.anthropic.Claude" => "Claude Desktop".to_string(),
+            b => format!("desktop · {b}"),
+        });
+    }
+    if stem.starts_with("tmux-spawn-") {
+        return Some("tmux".into());
+    }
+    if stem.starts_with("session-") || stem == "init" || stem.starts_with("user@") || stem.starts_with("wayland-wm@") {
+        return None;
+    }
+    // `agent-bench@dailywork-campanhas` → "agent-bench · dailywork-campanhas".
+    let (name, inst) = stem.split_once('@').map(|(n, i)| (n, Some(i))).unwrap_or((stem, None));
+    let pretty = match name {
+        "hermes-gateway" => "Hermes (gateway)".to_string(),
+        "9router" => "9Router".to_string(),
+        n => n.to_string(),
+    };
+    Some(match inst.filter(|i| !i.is_empty()) {
+        Some(i) => format!("{pretty} · {i}"),
+        None => pretty,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -134,28 +185,101 @@ pub struct ProcInfo {
     pub name_lower: String,
     pub exe_path: String,
     pub cmdline: String,
+    #[cfg(target_os = "linux")]
+    pub linux_memory: Option<(u64, u64)>, // USS, PSS; None = unavailable
     pub private_ws: u64,
     pub working_set: u64,
     pub commit: u64,
     pub threads: u32,
-    pub handles: u32,
+    /// Handle/FD count; None means unavailable or not sampled yet.
+    pub handles: Option<u32>,
     pub session: u32,
     /// FILETIME (100 ns desde 1601)
     pub create_time: i64,
+    /// % de CPU (todos os núcleos = 100%) já suavizada — é o que a coluna mostra e o que
+    /// a ordenação usa. Ver `CPU_EMA_TAU`.
     pub cpu_pct: f32,
+    /// A mesma medida sem suavização, do último intervalo. Só aparece no detalhe/tooltip:
+    /// serve para conferir um pico que a média ainda está subindo para alcançar.
+    pub cpu_raw_pct: f32,
     /// Bytes/s de disco (leitura + escrita), delta entre amostras.
     pub disk_bps: f64,
     /// % de uso de GPU somado entre engines (preenchido por `gpu::Gpu`).
+    /// Zero também representa “sem leitura”; use `gpu_load` para distinguir.
     pub gpu_pct: f32,
+    /// Carga de GPU deste PID. `None` = o driver não falou; `Some(0.0)` = ocioso.
+    pub gpu_load: Option<f32>,
+    /// VRAM atribuída a este PID, quando o driver expõe.
+    pub gpu_vram: Option<u64>,
+    /// Estado do kernel (`R`/`S`/`D`/`Z`/…), se amostrado.
+    pub kernel_state: Option<char>,
+    pub has_window: bool,
+    pub focused: bool,
+    pub window_title: Option<String>,
+    pub window_class: Option<String>,
     pub launcher: Launcher,
+}
+
+impl Default for ProcInfo {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            ppid: 0,
+            raw_ppid: 0,
+            name: String::new(),
+            name_lower: String::new(),
+            exe_path: String::new(),
+            cmdline: String::new(),
+            #[cfg(target_os = "linux")]
+            linux_memory: None,
+            private_ws: 0,
+            working_set: 0,
+            commit: 0,
+            threads: 1,
+            handles: None,
+            session: 0,
+            create_time: 0,
+            cpu_pct: 0.0,
+            cpu_raw_pct: 0.0,
+            disk_bps: 0.0,
+            gpu_pct: 0.0,
+            gpu_load: None,
+            gpu_vram: None,
+            kernel_state: None,
+            has_window: false,
+            focused: false,
+            window_title: None,
+            window_class: None,
+            launcher: Launcher::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KillOutcome {
+    Signaled,
+    AlreadyGone,
+    Denied,
+    Invalid,
+    Failed(String),
+}
+
+impl KillOutcome {
+    pub fn is_done(&self) -> bool {
+        matches!(self, Self::Signaled | Self::AlreadyGone)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MemStatus {
     pub total_phys: u64,
     pub avail_phys: u64,
+    #[cfg(target_os = "linux")]
+    pub linux_commit: Option<(u64, u64)>, // Committed_AS, CommitLimit
     pub total_commit: u64,
     pub avail_commit: u64,
+    pub swap_used: u64,
+    pub swap_total: u64,
 }
 
 impl MemStatus {
@@ -163,7 +287,10 @@ impl MemStatus {
         self.total_phys.saturating_sub(self.avail_phys)
     }
     pub fn used_commit(&self) -> u64 {
-        self.total_commit.saturating_sub(self.avail_commit)
+        #[cfg(target_os = "linux")]
+        { self.linux_commit.map(|m| m.0).unwrap_or(0) }
+        #[cfg(not(target_os = "linux"))]
+        { self.total_commit.saturating_sub(self.avail_commit) }
     }
 }
 
@@ -223,6 +350,8 @@ pub fn mem_status() -> MemStatus {
         avail_phys: m.ullAvailPhys,
         total_commit: m.ullTotalPageFile,
         avail_commit: m.ullAvailPageFile,
+        swap_used: 0,
+        swap_total: 0,
     }
 }
 
@@ -235,11 +364,26 @@ struct StaticInfo {
     launcher: Launcher,
 }
 
+/// Constante de tempo da média móvel da coluna CPU, em segundos.
+///
+/// O valor cru de um intervalo de 1 s é honesto e ilegível: qualquer processo real
+/// alterna entre rajada e espera, então a coluna piscava 0 → 14 → 2 → 9 e a lista se
+/// reordenava inteira a cada amostra — dava para ver que *alguém* estava comendo CPU,
+/// nunca *quem*. Com τ = 1 s a média chega a ~63% do valor novo na primeira amostra e a
+/// ~95% na terceira: rápido o bastante para um pico aparecer, lento o bastante para o
+/// topo da lista parar quieto o tempo de você ler.
+#[cfg(windows)]
+const CPU_EMA_TAU: f64 = 1.0;
+
 #[cfg(windows)]
 #[derive(Clone, Copy)]
 struct CpuSample {
     total_100ns: i64,
+    /// Ciclos de CPU realmente gastos pelo processo (`CycleTime` do kernel).
+    cycles: u64,
     io_bytes: u64,
+    /// Última média móvel, para o próximo passo do EMA.
+    ema: f32,
     at: Instant,
 }
 
@@ -247,8 +391,17 @@ struct CpuSample {
 pub struct Sampler {
     statics: HashMap<(u32, i64), StaticInfo>,
     cpu_prev: HashMap<(u32, i64), CpuSample>,
+    /// `kernel + user` da última leitura de `GetSystemTimes` — a capacidade total de CPU
+    /// contabilizada pelo kernel, que é o denominador de todo o cálculo abaixo.
+    sys_prev: Option<u64>,
+    last_at: Option<Instant>,
     ncpu: f64,
     buf: Vec<u8>,
+}
+
+#[cfg(windows)]
+fn ft(f: FILETIME) -> u64 {
+    ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64
 }
 
 #[cfg(windows)]
@@ -260,18 +413,42 @@ impl Sampler {
         Self {
             statics: HashMap::new(),
             cpu_prev: HashMap::new(),
+            sys_prev: None,
+            last_at: None,
             ncpu,
             buf: vec![0u8; 512 * 1024],
+        }
+    }
+
+    /// Quanto tempo-de-CPU o kernel contabilizou desde a amostra anterior, em unidades de
+    /// 100 ns somadas sobre todos os núcleos (o `kernel` de `GetSystemTimes` já inclui o
+    /// ocioso, então `kernel + user` é a capacidade total, não a ocupada).
+    ///
+    /// Serve de denominador no lugar de `núcleos × relógio de parede`. A diferença
+    /// aparece justo na hora que importa: quando a máquina está afogada a nossa thread
+    /// acorda atrasada, o relógio de parede conta esse atraso e o denominador incha,
+    /// diluindo o culpado exatamente quando você foi olhar quem era.
+    fn capacity_delta(&mut self) -> Option<u64> {
+        unsafe {
+            let (mut idle, mut kern, mut user) =
+                (FILETIME::default(), FILETIME::default(), FILETIME::default());
+            if GetSystemTimes(Some(&mut idle), Some(&mut kern), Some(&mut user)).is_err() {
+                return None;
+            }
+            let total = ft(kern) + ft(user);
+            let prev = self.sys_prev.replace(total);
+            prev.and_then(|p| total.checked_sub(p)).filter(|d| *d > 0)
         }
     }
 
     pub fn sample(&mut self) -> Vec<ProcInfo> {
         let now = Instant::now();
         let raw = self.query_raw();
+        let cpu = self.cpu_shares(&raw, now);
         let mut out: Vec<ProcInfo> = Vec::with_capacity(raw.len());
         let mut seen: HashMap<(u32, i64), ()> = HashMap::with_capacity(raw.len());
 
-        for r in &raw {
+        for (i, r) in raw.iter().enumerate() {
             let key = (r.pid, r.create_time);
             seen.insert(key, ());
             let st = match self.statics.get(&key) {
@@ -283,34 +460,31 @@ impl Sampler {
                 }
             };
             let total = r.user_time + r.kernel_time;
-            let (cpu_pct, disk_bps) = match self.cpu_prev.get(&key) {
+            let (cpu_raw_pct, cpu_pct) = cpu[i];
+            let disk_bps = match self.cpu_prev.get(&key) {
                 Some(prev) => {
                     let dt = now.duration_since(prev.at).as_secs_f64();
                     if dt > 0.0 {
-                        let d = (total - prev.total_100ns).max(0) as f64 / 1e7;
-                        let io = r.io_bytes.saturating_sub(prev.io_bytes) as f64 / dt;
-                        (((d / dt) / self.ncpu * 100.0) as f32, io)
+                        r.io_bytes.saturating_sub(prev.io_bytes) as f64 / dt
                     } else {
-                        (0.0, 0.0)
+                        0.0
                     }
                 }
-                None => (0.0, 0.0),
+                None => 0.0,
             };
             self.cpu_prev.insert(
                 key,
                 CpuSample {
                     total_100ns: total,
+                    cycles: r.cycle_time,
                     io_bytes: r.io_bytes,
+                    ema: cpu_pct,
                     at: now,
                 },
             );
 
             let name = if r.name.is_empty() {
-                if r.pid == 4 {
-                    "System".into()
-                } else {
-                    format!("[pid {}]", r.pid)
-                }
+                if r.pid == 4 { "System".into() } else { format!("[pid {}]", r.pid) }
             } else {
                 r.name.clone()
             };
@@ -326,12 +500,20 @@ impl Sampler {
                 working_set: r.working_set,
                 commit: r.commit,
                 threads: r.threads,
-                handles: r.handles,
+                handles: Some(r.handles),
                 session: r.session,
                 create_time: r.create_time,
                 cpu_pct,
+                cpu_raw_pct,
                 disk_bps,
                 gpu_pct: 0.0,
+                gpu_load: None,
+                gpu_vram: None,
+                kernel_state: None,
+                has_window: false,
+                focused: false,
+                window_title: None,
+                window_class: None,
                 launcher: st.launcher,
             });
         }
@@ -350,6 +532,83 @@ impl Sampler {
             }
         }
         out
+    }
+
+    /// `(cru, suavizado)` de CPU para cada entrada de `raw`, na mesma ordem.
+    ///
+    /// Duas decisões que separam este número do delta de `KernelTime + UserTime` que
+    /// estava aqui antes:
+    ///
+    /// 1. **A repartição é por ciclos, não por tempo.** O kernel só sabe cobrar tempo em
+    ///    fatias inteiras de 15,625 ms, e cobra a fatia toda de quem estava rodando no
+    ///    instante do tique. Quem acorda em rajadas de 1 ms leva 0 numa amostra e 15 ms na
+    ///    seguinte — é dessa loteria que vinha o número dançando. `CycleTime` é contado a
+    ///    cada troca de contexto e já vinha de graça no mesmo buffer, apenas descartado.
+    /// 2. **O total repartido é o tempo medido, não os ciclos.** Ciclo não converte para
+    ///    porcentagem: o mesmo ciclo vale menos num E-core e menos ainda com o clock
+    ///    baixo. Então a soma a distribuir vem do relógio (`Σ tempo / capacidade`) e os
+    ///    ciclos só dizem *como* dividir essa soma entre os processos.
+    ///
+    /// O que morreu entre as duas amostras fica de fora dos dois lados da conta, e por
+    /// isso não é redistribuído: se um `cl.exe` queimou 30% e saiu, ninguém herda esses
+    /// 30% — eles somem da lista, como devem, e a diferença para o medidor do topo
+    /// continua sendo o que a lista honestamente não sabe explicar.
+    fn cpu_shares(&mut self, raw: &[RawProc], now: Instant) -> Vec<(f32, f32)> {
+        let capacity = self.capacity_delta().map(|d| d as f64).unwrap_or_else(|| {
+            // `GetSystemTimes` falhou: cai no relógio de parede × núcleos.
+            let dt = self.last_at.map(|t| now.duration_since(t).as_secs_f64()).unwrap_or(0.0);
+            dt * self.ncpu * 1e7
+        });
+        let dt_wall = self.last_at.map(|t| now.duration_since(t).as_secs_f64()).unwrap_or(0.0);
+        self.last_at = Some(now);
+
+        // Deltas de quem existe nas duas amostras. Processo novo entra com zero: sem o
+        // instante anterior não há taxa nenhuma para medir.
+        let mut d_time: Vec<i64> = Vec::with_capacity(raw.len());
+        let mut d_cycles: Vec<u64> = Vec::with_capacity(raw.len());
+        let mut sum_time: i64 = 0;
+        let mut sum_cycles: u128 = 0;
+        for r in raw {
+            let (dt, dc) = match self.cpu_prev.get(&(r.pid, r.create_time)) {
+                Some(prev) => (
+                    (r.user_time + r.kernel_time - prev.total_100ns).max(0),
+                    r.cycle_time.saturating_sub(prev.cycles),
+                ),
+                None => (0, 0),
+            };
+            sum_time += dt;
+            sum_cycles += dc as u128;
+            d_time.push(dt);
+            d_cycles.push(dc);
+        }
+
+        if capacity <= 0.0 {
+            return vec![(0.0, 0.0); raw.len()];
+        }
+        // O quanto da máquina os processos vivos nas duas pontas consumiram, somados.
+        let matched_pct = (sum_time as f64 / capacity * 100.0).clamp(0.0, 100.0);
+        // Passo do EMA para este intervalo. Amarrado ao tempo, não à contagem de amostras:
+        // trocar o intervalo de 0,5 s para 5 s não pode mudar o quanto a coluna alisa.
+        let alpha = if dt_wall > 0.0 { 1.0 - (-dt_wall / CPU_EMA_TAU).exp() } else { 1.0 };
+
+        (0..raw.len())
+            .map(|i| {
+                let pct = if sum_cycles > 0 {
+                    (d_cycles[i] as f64 / sum_cycles as f64 * matched_pct) as f32
+                } else {
+                    // Sem `CycleTime` (Windows antigo ou máquina virtual que zera o campo):
+                    // o tempo cru ainda dá a resposta certa, só mais granulada.
+                    (d_time[i] as f64 / capacity * 100.0) as f32
+                };
+                let ema = match self.cpu_prev.get(&(raw[i].pid, raw[i].create_time)) {
+                    // Processo já conhecido: continua a média de onde ela estava.
+                    Some(prev) => prev.ema + (pct - prev.ema) * alpha as f32,
+                    // Primeira vez que o vemos: `pct` é 0 e a média nasce aí mesmo.
+                    None => pct,
+                };
+                (pct, ema)
+            })
+            .collect()
     }
 
     fn query_raw(&mut self) -> Vec<RawProc> {
@@ -400,8 +659,8 @@ impl Sampler {
                         create_time: e.create_time,
                         user_time: e.user_time,
                         kernel_time: e.kernel_time,
-                        io_bytes: (e.read_transfer_count.max(0) + e.write_transfer_count.max(0))
-                            as u64,
+                        cycle_time: e.cycle_time,
+                        io_bytes: (e.read_transfer_count.max(0) + e.write_transfer_count.max(0)) as u64,
                     });
                 }
                 if e.next_entry_offset == 0 {
@@ -428,6 +687,9 @@ struct RawProc {
     create_time: i64,
     user_time: i64,
     kernel_time: i64,
+    /// Ciclos de CPU do processo. Contado a cada troca de contexto, sem a granularidade
+    /// de 15,625 ms do tempo de kernel/usuário.
+    cycle_time: u64,
     io_bytes: u64,
 }
 
@@ -445,20 +707,12 @@ fn query_static(pid: u32) -> StaticInfo {
         // Caminho completo do executável
         let mut buf = vec![0u16; 1024];
         let mut size = buf.len() as u32;
-        if QueryFullProcessImageNameW(h.0, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut size)
-            .is_ok()
-        {
+        if QueryFullProcessImageNameW(h.0, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut size).is_ok() {
             st.exe_path = String::from_utf16_lossy(&buf[..size as usize]);
         }
         // Linha de comando (ProcessCommandLineInformation: não precisa de VM_READ)
         let mut ret: u32 = 0;
-        let status = NtQueryInformationProcess(
-            h.0,
-            ProcessCommandLineInformation,
-            std::ptr::null_mut(),
-            0,
-            &mut ret,
-        );
+        let status = NtQueryInformationProcess(h.0, ProcessCommandLineInformation, std::ptr::null_mut(), 0, &mut ret);
         if status == STATUS_INFO_LENGTH_MISMATCH && ret > 0 {
             let mut cbuf = vec![0u8; ret as usize + 16];
             let status = NtQueryInformationProcess(
@@ -493,11 +747,7 @@ fn read_launcher(pid: u32) -> Launcher {
     const RUPP_ENVIRONMENT_SIZE: usize = 0x3F0;
     const MAX_ENV: usize = 2 * 1024 * 1024;
     unsafe {
-        let h = match OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
-            false,
-            pid,
-        ) {
+        let h = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, false, pid) {
             Ok(h) => OwnedHandle(h),
             Err(_) => return Launcher::default(),
         };
@@ -521,25 +771,14 @@ fn read_launcher(pid: u32) -> Launcher {
         let read_usize = |addr: usize| -> Option<usize> {
             let mut b = [0u8; 8];
             let mut n: usize = 0;
-            ReadProcessMemory(
-                h.0,
-                addr as *const c_void,
-                b.as_mut_ptr() as *mut c_void,
-                8,
-                Some(&mut n),
-            )
-            .ok()?;
+            ReadProcessMemory(h.0, addr as *const c_void, b.as_mut_ptr() as *mut c_void, 8, Some(&mut n)).ok()?;
             (n == 8).then(|| usize::from_le_bytes(b))
         };
-        let Some(params) = read_usize(peb + PEB_PROCESS_PARAMETERS) else {
-            return Launcher::default();
-        };
+        let Some(params) = read_usize(peb + PEB_PROCESS_PARAMETERS) else { return Launcher::default() };
         if params == 0 {
             return Launcher::default();
         }
-        let Some(env) = read_usize(params + RUPP_ENVIRONMENT) else {
-            return Launcher::default();
-        };
+        let Some(env) = read_usize(params + RUPP_ENVIRONMENT) else { return Launcher::default() };
         if env == 0 {
             return Launcher::default();
         }
@@ -549,22 +788,10 @@ fn read_launcher(pid: u32) -> Launcher {
         }
         let mut buf = vec![0u8; size];
         let mut n: usize = 0;
-        if ReadProcessMemory(
-            h.0,
-            env as *const c_void,
-            buf.as_mut_ptr() as *mut c_void,
-            size,
-            Some(&mut n),
-        )
-        .is_err()
-            || n < 4
-        {
+        if ReadProcessMemory(h.0, env as *const c_void, buf.as_mut_ptr() as *mut c_void, size, Some(&mut n)).is_err() || n < 4 {
             return Launcher::default();
         }
-        let words: Vec<u16> = buf[..n]
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
+        let words: Vec<u16> = buf[..n].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
         parse_launcher(&words)
     }
 }
@@ -590,9 +817,7 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
     let mut l = Launcher::default();
     let mut host_rank = 0u8; // prioridade: Maestri > VS Code/Cursor > Windows Terminal/outros
     for s in lines {
-        let Some((k, v)) = s.split_once('=') else {
-            continue;
-        };
+        let Some((k, v)) = s.split_once('=') else { continue };
         let ku = k.to_ascii_uppercase();
         let mut set_host = |name: &str, rank: u8, l: &mut Launcher| {
             if host_rank < rank {
@@ -601,10 +826,7 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
             }
         };
         match ku.as_str() {
-            "CLAUDECODE"
-            | "CLAUDE_CODE_ENTRYPOINT"
-            | "CLAUDE_CODE_SESSION_ID"
-            | "CLAUDE_CODE_CHILD_SESSION" => {
+            "CLAUDECODE" | "CLAUDE_CODE_ENTRYPOINT" | "CLAUDE_CODE_SESSION_ID" | "CLAUDE_CODE_CHILD_SESSION" => {
                 l.agent.get_or_insert_with(|| "Claude Code".into());
                 if ku == "CLAUDE_CODE_SESSION_ID" {
                     l.session = Some(v.chars().take(8).collect());
@@ -614,12 +836,8 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
                 l.agent.get_or_insert_with(|| "Claude Code".into());
                 l.agent_pid = v.trim().parse().ok();
             }
-            "CODEX_SANDBOX"
-            | "CODEX_SANDBOX_NETWORK_DISABLED"
-            | "CODEX_THREAD_ID"
-            | "CODEX_SESSION_ID"
-            | "CODEX_MANAGED_BY_NPM"
-            | "CODEX_CI" => {
+            "CODEX_SANDBOX" | "CODEX_SANDBOX_NETWORK_DISABLED" | "CODEX_THREAD_ID" | "CODEX_SESSION_ID"
+            | "CODEX_MANAGED_BY_NPM" | "CODEX_CI" => {
                 l.agent.get_or_insert_with(|| "Codex".into());
                 if ku == "CODEX_THREAD_ID" || ku == "CODEX_SESSION_ID" {
                     l.session = Some(v.chars().take(8).collect());
@@ -635,29 +853,14 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
             "HERMES_SESSION_ID" | "HERMES_AGENT" => {
                 l.agent.get_or_insert_with(|| "Hermes".into());
             }
-            "MAESTRI_TERMINAL_ID" | "MAESTRI_WORKSPACE_ID" | "MAESTRI_PIPE" => {
-                set_host("Maestri", 3, &mut l)
-            }
+            "MAESTRI_TERMINAL_ID" | "MAESTRI_WORKSPACE_ID" | "MAESTRI_PIPE" => set_host("Maestri", 3, &mut l),
             "CURSOR_TRACE_ID" => set_host("Cursor", 2, &mut l),
             "TERM_PROGRAM" => {
                 let vl = v.to_ascii_lowercase();
-                let name = if vl == "vscode" {
-                    Some("VS Code")
-                } else if vl.contains("cursor") {
-                    Some("Cursor")
-                } else if vl.contains("zed") {
-                    Some("Zed")
-                } else if vl.contains("warp") {
-                    Some("Warp")
-                } else if vl.contains("iterm") {
-                    Some("iTerm")
-                } else if vl.contains("apple_terminal") {
-                    Some("Terminal")
-                } else if vl.contains("wezterm") {
-                    Some("WezTerm")
-                } else {
-                    None
-                };
+                let name = if vl == "vscode" { Some("VS Code") } else if vl.contains("cursor") { Some("Cursor") }
+                    else if vl.contains("zed") { Some("Zed") } else if vl.contains("warp") { Some("Warp") }
+                    else if vl.contains("iterm") { Some("iTerm") } else if vl.contains("apple_terminal") { Some("Terminal") }
+                    else if vl.contains("wezterm") { Some("WezTerm") } else { None };
                 if let Some(nm) = name {
                     set_host(nm, 2, &mut l);
                 }
@@ -665,31 +868,60 @@ pub(crate) fn launcher_from_env_lines(lines: &[String]) -> Launcher {
             "VSCODE_PID" | "VSCODE_CWD" => set_host("VS Code", 1, &mut l),
             "WT_SESSION" => set_host("Windows Terminal", 1, &mut l),
             "ALACRITTY_WINDOW_ID" | "ALACRITTY_SOCKET" => set_host("Alacritty", 1, &mut l),
+            "KITTY_WINDOW_ID" | "KITTY_PID" => set_host("Kitty", 1, &mut l),
+            "KONSOLE_VERSION" | "KONSOLE_DBUS_SESSION" => set_host("Konsole", 1, &mut l),
+            "GNOME_TERMINAL_SCREEN" | "GNOME_TERMINAL_SERVICE" => set_host("GNOME Terminal", 1, &mut l),
+            "TILIX_ID" => set_host("Tilix", 1, &mut l),
+            "GHOSTTY_BIN_DIR" => set_host("Ghostty", 1, &mut l),
             "CONEMUPID" => set_host("ConEmu", 1, &mut l),
             "INIT_CWD" => l.init_cwd = Some(v.to_string()),
             "NPM_LIFECYCLE_EVENT" => l.npm_script = Some(v.to_string()),
+            "STEAM_COMPAT_APP_ID" | "STEAMAPPID" | "STEAM_GAME" => {
+                if l.steam_app_id.is_none() {
+                    l.steam_app_id = v.trim().parse().ok().filter(|n| *n > 0);
+                }
+            }
+            "WINEPREFIX" | "STEAM_COMPAT_DATA_PATH" => {
+                if l.wine_prefix.is_none() && !v.trim().is_empty() {
+                    l.wine_prefix = Some(v.to_string());
+                }
+            }
             _ => {}
+        }
+    }
+    if l.steam_app_id.is_none() {
+        if let Some(prefix) = &l.wine_prefix {
+            if let Some(rest) = prefix.split("compatdata/").nth(1) {
+                let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                l.steam_app_id = digits.parse().ok().filter(|n| *n > 0);
+            }
         }
     }
     l
 }
 
 #[cfg(windows)]
-pub fn kill(pid: u32) -> Result<(), String> {
+pub fn kill(pid: u32) -> KillOutcome {
     unsafe {
-        let h = OpenProcess(PROCESS_TERMINATE, false, pid).map_err(|e| fmt_err(&e))?;
+        let h = match OpenProcess(PROCESS_TERMINATE, false, pid) {
+            Ok(h) => h,
+            Err(e) => return win_kill_err(&e),
+        };
         let h = OwnedHandle(h);
-        TerminateProcess(h.0, 1).map_err(|e| fmt_err(&e))
+        match TerminateProcess(h.0, 1) {
+            Ok(()) => KillOutcome::Signaled,
+            Err(e) => win_kill_err(&e),
+        }
     }
 }
 
 #[cfg(windows)]
-fn fmt_err(e: &windows::core::Error) -> String {
+fn win_kill_err(e: &windows::core::Error) -> KillOutcome {
     let code = e.code().0 as u32 & 0xFFFF;
     match code {
-        5 => "access denied (try reopening as administrator)".to_string(),
-        87 => "invalid parameter (process already exited?)".to_string(),
-        _ => e.message().trim().to_string(),
+        5 => KillOutcome::Denied,
+        87 => KillOutcome::AlreadyGone,
+        _ => KillOutcome::Failed(e.message().trim().to_string()),
     }
 }
 
@@ -721,63 +953,22 @@ pub fn enable_debug_privilege() {
 #[path = "procs_unix.rs"]
 mod procs_unix;
 #[cfg(not(windows))]
-pub use procs_unix::{enable_debug_privilege, is_admin, kill, mem_status, Sampler};
+pub use procs_unix::{enable_debug_privilege, is_admin, kernel_state, kill, mem_status, nudge_parent, terminate, Sampler};
 
-/// Returns the memory metric value for a process according to the chosen mode.
-pub fn metric_of(m: crate::config::MemMetric, p: &ProcInfo) -> u64 {
-    use crate::config::MemMetric;
-    match m {
-        MemMetric::WorkingSet => p.working_set,
-        MemMetric::Private => p.private_ws,
-        MemMetric::Commit => p.commit,
-    }
+#[cfg(windows)]
+pub fn terminate(pid: u32) -> KillOutcome {
+    kill(pid)
 }
 
-/// Compute subtree memory totals and process counts for every process via DFS with memo.
-/// Returns `(total_bytes_by_pid, count_by_pid)`.
-pub fn subtree_totals(
-    procs: &[ProcInfo],
-    mem_metric: crate::config::MemMetric,
-) -> (HashMap<u32, u64>, HashMap<u32, usize>) {
-    let by_pid: HashMap<u32, &ProcInfo> = procs.iter().map(|p| (p.pid, p)).collect();
-    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
-    for p in procs {
-        children.entry(p.ppid).or_default().push(p.pid);
-    }
-    let mut totals = HashMap::new();
-    let mut counts = HashMap::new();
-    for p in procs {
-        subtree_dfs(p.pid, &by_pid, &children, mem_metric, &mut totals, &mut counts, 0);
-    }
-    (totals, counts)
+/// Windows não tem zombie: o estado do kernel não é amostrado.
+#[cfg(windows)]
+pub fn kernel_state(_pid: u32) -> Option<char> {
+    None
 }
 
-fn subtree_dfs(
-    pid: u32,
-    by_pid: &HashMap<u32, &ProcInfo>,
-    children: &HashMap<u32, Vec<u32>>,
-    mem_metric: crate::config::MemMetric,
-    totals: &mut HashMap<u32, u64>,
-    counts: &mut HashMap<u32, usize>,
-    depth: usize,
-) -> (u64, usize) {
-    if let (Some(&t), Some(&c)) = (totals.get(&pid), counts.get(&pid)) {
-        return (t, c);
-    }
-    let own = by_pid.get(&pid).map(|p| metric_of(mem_metric, p)).unwrap_or(0);
-    let mut total = own;
-    let mut count = 1usize;
-    if depth < 128 {
-        for child in children.get(&pid).into_iter().flatten() {
-            let (child_total, child_count) =
-                subtree_dfs(*child, by_pid, children, mem_metric, totals, counts, depth + 1);
-            total += child_total;
-            count += child_count;
-        }
-    }
-    totals.insert(pid, total);
-    counts.insert(pid, count);
-    (total, count)
+#[cfg(windows)]
+pub fn nudge_parent(_ppid: u32) -> KillOutcome {
+    KillOutcome::Invalid
 }
 
 /// FILETIME atual (100 ns desde 1601-01-01 UTC).
@@ -786,4 +977,36 @@ pub fn now_filetime() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     (d.as_nanos() / 100) as i64 + 116_444_736_000_000_000
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::unit_label;
+
+    #[test]
+    fn service_units_name_the_launcher() {
+        assert_eq!(unit_label("hermes-gateway.service").as_deref(), Some("Hermes (gateway)"));
+        assert_eq!(unit_label("agent-bench@dailywork-campanhas.service").as_deref(), Some("agent-bench · dailywork-campanhas"));
+        assert_eq!(unit_label("9router.service").as_deref(), Some("9Router"));
+        assert_eq!(unit_label("no-mistakes-daemon-335d9d88.service").as_deref(), Some("no-mistakes-daemon-335d9d88"));
+    }
+
+    #[test]
+    fn desktop_scopes_collapse_to_desktop() {
+        assert_eq!(unit_label("app-Hyprland-gtk\\x2dlaunch-d25303f7.scope").as_deref(), Some("desktop"));
+        assert_eq!(unit_label("app-Hyprland-xdg\\x2dterminal\\x2dexec-b5376856.scope").as_deref(), Some("desktop"));
+        assert_eq!(unit_label("app-org.chromium.Chromium-1962181.scope").as_deref(), Some("desktop (navegador)"));
+        assert_eq!(unit_label("app-com.anthropic.Claude-155069.scope").as_deref(), Some("Claude Desktop"));
+        assert_eq!(unit_label("app-discord-3217129.scope").as_deref(), Some("desktop · discord"));
+        assert_eq!(unit_label("tmux-spawn-56e310aa-05c6.scope").as_deref(), Some("tmux"));
+    }
+
+    #[test]
+    fn generic_units_say_nothing() {
+        assert_eq!(unit_label("session-2.scope"), None);
+        assert_eq!(unit_label("init.scope"), None);
+        assert_eq!(unit_label("user@1000.service"), None);
+        assert_eq!(unit_label("app.slice"), None);
+        assert_eq!(unit_label(""), None);
+    }
 }
